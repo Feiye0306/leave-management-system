@@ -10,7 +10,7 @@ interface EmployeeListProps {
 }
 
 function EmployeeList({ selectedBranch }: EmployeeListProps) {
-    const { employees, addEmployee, updateEmployee, deleteEmployee, addAuditLog } = useLeaveSystem();
+    const { employees, branches, addEmployee, updateEmployee, deleteEmployee, addAuditLog } = useLeaveSystem();
     const [searchTerm, setSearchTerm] = useState('');
     const [showInactive, setShowInactive] = useState(false);
 
