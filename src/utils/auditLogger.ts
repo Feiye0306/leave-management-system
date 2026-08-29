@@ -33,46 +33,49 @@ export function createAuditLog(params: {
  * 格式化 Audit Log 為人類可讀的描述
  */
 export function formatAuditLog(log: AuditLog): string {
-    const time = new Date(log.timestamp).toLocaleString('zh-TW');
-    const employee = log.employeeName ? ` - ${log.employeeName}` : '';
+    const employee = log.employeeName ? `・${log.employeeName}` : '';
 
     switch (log.action) {
         // 員工管理
         case 'employee_create':
-            return `${time} | 新增員工${employee}`;
+            return `新增員工${employee}`;
         case 'employee_delete':
-            return `${time} | 刪除員工${employee}`;
+            return `刪除員工${employee}`;
         case 'employee_update':
-            return `${time} | 更新員工資訊${employee}`;
+            return `更新員工資訊${employee}`;
         case 'adjust_annual':
-            return `${time} | 調整特休額度${employee}：${log.before}天 → ${log.after}天 (${log.amount! > 0 ? '+' : ''}${log.amount}天)`;
+            return `調整特休額度${employee} (${log.amount! > 0 ? '+' : ''}${log.amount} 天)`;
         case 'adjust_personal':
-            return `${time} | 調整排休額度${employee}：${log.before}天 → ${log.after}天 (${log.amount! > 0 ? '+' : ''}${log.amount}天)`;
+            return `調整排休額度${employee} (${log.amount! > 0 ? '+' : ''}${log.amount} 天)`;
         case 'cashout_annual':
-            return `${time} | 特休 Cash Out${employee}：結算 ${Math.abs(log.amount!)} 天`;
+            return `特休結算 (Cash Out)${employee}：${Math.abs(log.amount!)} 天`;
         case 'cashout_personal':
-            return `${time} | 排休 Cash Out${employee}：結算 ${Math.abs(log.amount!)} 天`;
+            return `排休結算 (Cash Out)${employee}：${Math.abs(log.amount!)} 天`;
 
         // 請假管理
         case 'leave_create':
-            return `${time} | 新增請假${employee}：${log.details?.leaveType === 'annual' ? '特休' : '排休'} ${log.details?.days}天`;
+            return `新增排休${employee}：${log.details?.leaveType === 'annual' ? '特休' : '排休'} ${log.details?.days || 1} 天`;
         case 'leave_batch_create':
-            return `${time} | 批次新增請假${employee}：${log.details?.count}筆記錄`;
+            return `批次新增排休${employee} (${log.details?.count || 1} 筆)`;
         case 'leave_delete':
-            return `${time} | 刪除請假記錄${employee}`;
+            return `刪除請假記錄${employee}`;
         case 'leave_update':
-            return `${time} | 更新請假記錄${employee}`;
+            return `更新請假記錄${employee}`;
 
         // 系統操作
         case 'system_generate_sample':
-            return `${time} | 生成範例資料`;
+            return `生成範例資料`;
         case 'system_reset':
-            return `${time} | 重置系統資料`;
+            return `重置系統資料`;
+        case 'system_monthly_accrual':
+            return `每月排休額度自動發放`;
+        case 'system_reset_annual':
+            return `到職週年特休自動更新${employee}`;
         case 'system_export':
-            return `${time} | 匯出資料：${log.details?.exportType || 'CSV'}`;
+            return `匯出資料：${log.details?.exportType || 'CSV'}`;
 
         default:
-            return `${time} | 未知操作：${log.action}`;
+            return `操作：${log.action}${employee}`;
     }
 }
 
