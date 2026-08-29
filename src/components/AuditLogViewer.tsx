@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, Filter, Calendar, User, Settings as SettingsIcon, Download, Clock, ChevronDown, ChevronUp, UserCheck, Trash2, Sliders, CalendarCheck2, Sparkles, RefreshCw } from 'lucide-react';
+import { Search, Filter, Download, Clock, UserCheck, Trash2, Sliders, CalendarCheck2, Sparkles, RefreshCw } from 'lucide-react';
 import { useLeaveSystem } from '../context/LeaveContext';
 import { formatAuditLog } from '../utils/auditLogger';
 import type { AuditAction, AuditLog } from '../types';
@@ -50,7 +50,7 @@ function renderDetailsFriendly(details: Record<string, any> | undefined) {
     );
 }
 
-function getLogIcon(category: string, action: string) {
+function getLogIcon(_category: string, action: string) {
     if (action.includes('create') || action.includes('add')) return <UserCheck size={16} className="text-emerald-500" />;
     if (action.includes('delete') || action.includes('remove')) return <Trash2 size={16} className="text-rose-500" />;
     if (action.includes('adjust') || action.includes('cashout')) return <Sliders size={16} className="text-blue-500" />;
@@ -83,11 +83,6 @@ function AuditLogViewer() {
         start: '',
         end: ''
     });
-    const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
-
-    const toggleExpand = (id: string) => {
-        setExpandedIds(prev => ({ ...prev, [id]: !prev[id] }));
-    };
 
     useEffect(() => {
         const loadLogs = async () => {
@@ -280,9 +275,6 @@ function AuditLogViewer() {
                 ) : (
                     <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-200">
                         {filteredLogs.map((log) => {
-                            const isExpanded = !!expandedIds[log.id];
-                            const hasDetails = (log.reason || (log.details && Object.keys(log.details).length > 0));
-
                             return (
                                 <div key={log.id} className="relative group">
                                     {/* Dot */}
