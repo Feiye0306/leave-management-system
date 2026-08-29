@@ -338,9 +338,10 @@ function EmployeeList({ selectedBranch }: EmployeeListProps) {
                                 <label className="block text-sm font-bold text-slate-700 mb-2">姓名</label>
                                 <input
                                     type="text"
+                                    data-testid="employee-name-input"
                                     value={newEmp.name}
                                     onChange={e => setNewEmp({ ...newEmp, name: e.target.value })}
-                                    placeholder="請輸入姓名"
+                                    placeholder="請輸入員工姓名"
                                     className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-bold focus:border-midnight-blue outline-none"
                                 />
                             </div>
@@ -358,8 +359,9 @@ function EmployeeList({ selectedBranch }: EmployeeListProps) {
                                     onChange={e => setNewEmp({ ...newEmp, branch: e.target.value })}
                                     className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-bold"
                                 >
-                                    <option value="信義校">信義校</option>
-                                    <option value="南港校">南港校</option>
+                                    {branches.filter(b => b !== '全部分校').map(b => (
+                                        <option key={b} value={b}>{b}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="col-span-1">

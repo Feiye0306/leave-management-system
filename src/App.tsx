@@ -40,9 +40,13 @@ function MonthlyAccrualController() {
 import { AutoBackupService } from './services/AutoBackupService';
 function AutoBackupController() {
   useEffect(() => {
-    AutoBackupService.checkAndRemind(() => {
-      alert('⚠️ 系統備份提醒\n\n您已經超過 7 天未備份系統資料。\n為了確保資料安全，建議您前往「資料備份」頁面下載最新備份檔。');
-    });
+    const timer = setTimeout(() => {
+      AutoBackupService.checkAndRemind(() => {
+        // 使用非阻塞方式記錄已提醒
+        console.log('⚠️ 系統備份提醒：建議前往「資料備份」頁面下載最新備份檔。');
+      });
+    }, 2000);
+    return () => clearTimeout(timer);
   }, []);
   return null;
 }
