@@ -74,30 +74,38 @@ async function runBrowserTest() {
         console.log('✅ 額度調整按鈕存在且可用');
     }
 
-    // 6. 測試導航至「請假登記」
-    console.log('📍 步驟 6: 導航至「請假登記」');
-    await page.locator('text=請假登記').first().click();
-    await page.waitForTimeout(500);
+    // 6. 測試導航至「排休申請」
+    console.log('📍 步驟 6: 導航至「排休申請」');
+    await page.locator('text=排休申請').first().click();
+    await page.waitForTimeout(600);
     const selectEmpDropdown = page.locator('select').first();
-    if (await selectEmpDropdown.count() > 0) {
-        console.log('✅ 請假登記員工下拉選單正常');
-    }
+    console.log(`✅ 排休申請員工下拉選單: ${await selectEmpDropdown.count() > 0 ? '正常可用' : '未找到'}`);
 
     // 7. 測試導航至「報表中心」
     console.log('📍 步驟 7: 導航至「報表中心」');
     await page.locator('text=報表中心').first().click();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
     const reportTabs = page.locator('button:has-text("月度排休公告"), button:has-text("個人年度明細"), button:has-text("到期警示")');
     console.log(`✅ 報表中心分頁數: ${await reportTabs.count()}`);
 
     // 8. 測試導航至「操作日誌」
     console.log('📍 步驟 8: 導航至「操作日誌」');
     await page.locator('text=操作日誌').first().click();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
     const logEntries = page.locator('text=新增員工');
     console.log(`🔎 驗證操作日誌中是否有記錄: ${await logEntries.count() > 0 ? '✅ 成功記錄！' : '⚠️ 無記錄'}`);
 
-    // 9. 截圖保存
+    // 9. 測試導航至「資料備份」
+    console.log('📍 步驟 9: 導航至「資料備份」');
+    await page.locator('text=資料備份').first().click();
+    await page.waitForTimeout(600);
+
+    // 10. 測試導航至「系統設定」
+    console.log('📍 步驟 10: 導航至「系統設定」');
+    await page.locator('text=系統設定').first().click();
+    await page.waitForTimeout(600);
+
+    // 11. 截圖保存
     const screenshotPath = 'scripts/test-result.png';
     await page.screenshot({ path: screenshotPath, fullPage: true });
     console.log(`📸 測試成功，全頁面截圖已儲存至: ${screenshotPath}`);
