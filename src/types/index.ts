@@ -27,6 +27,7 @@ export type LeaveRecord = {
     employeeName: string;
     branch: string;
     leaveType: 'annual' | 'personal';
+    customTitle?: string; // 自訂名目（如：颱風假、加班補休、特殊事由）
     startDate: string;
     endDate: string;
     isFullDay: boolean;

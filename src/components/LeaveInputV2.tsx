@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { X, Edit2, Trash2, Calendar as CalendarIcon, FileText, User, ChevronDown, Check, ArrowRightLeft, Clock, AlertCircle } from 'lucide-react';
+import { X, Edit2, Trash2, Calendar as CalendarIcon, FileText, User, ChevronDown, Check, ArrowRightLeft, Clock, AlertCircle, Sparkles, Tag } from 'lucide-react';
 import { useLeaveSystem } from '../context/LeaveContext';
 import { createAuditLog } from '../utils/auditLogger';
 import type { LeaveRecord, TimeSlot } from '../types';
@@ -11,14 +11,17 @@ interface LeaveInputV2Props {
 interface DateConfig {
     isFullDay: boolean;
     slots: TimeSlot[];
+    days: number;
+    customTitle?: string;
     note: string;
 }
 
 function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
     const { employees, leaves: roster, addLeaves, updateEmployee, updateLeave, deleteLeave, addAuditLog } = useLeaveSystem();
 
+    // 1. 預設假期為「排休」
     const [selectedEmployee, setSelectedEmployee] = useState<string>('');
-    const [leaveType, setLeaveType] = useState<'annual' | 'personal'>('annual');
+    const [leaveType, setLeaveType] = useState<'annual' | 'personal'>('personal');
 
     // Config State for New Leaves
     const [datesConfig, setDatesConfig] = useState<Record<string, DateConfig>>({});
@@ -27,6 +30,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
     const [editingDate, setEditingDate] = useState<string | null>(null);
     const [isReviewOpen, setIsReviewOpen] = useState(false);
     const [managingLeave, setManagingLeave] = useState<LeaveRecord | null>(null);
+    const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<'calendar' | 'existing'>('calendar');
 
     const filteredEmployees = selectedBranch === '全部分校'
@@ -98,7 +102,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
             if (newConfig[dateStr]) {
                 delete newConfig[dateStr];
             } else {
-                newConfig[dateStr] = { isFullDay: true, slots: [], note: '' };
+                newConfig[dateStr] = { isFullDay: true, slots: [], days: 1, note: '' };
             }
             return newConfig;
         });
@@ -132,9 +136,10 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
 
         const newRecords: LeaveRecord[] = [];
         let totalDaysDeducted = 0;
+        const sortedDatesList = Object.keys(datesConfig).sort();
 
         Object.entries(datesConfig).forEach(([dateStr, config]) => {
-            const days = config.isFullDay ? 1 : config.slots.length * 0.5;
+            const days = config.days ?? (config.isFullDay ? 1 : config.slots.length * 0.5);
             const slotMap: Record<TimeSlot, string> = { morning: '上午', afternoon: '下午', evening: '晚上' };
             const timeSlotDesc = config.isFullDay ? undefined : config.slots.map(s => slotMap[s]).join('、');
 
@@ -144,6 +149,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                 employeeName: employee.name,
                 branch: employee.branch,
                 leaveType,
+                customTitle: config.customTitle,
                 startDate: dateStr,
                 endDate: dateStr,
                 isFullDay: config.isFullDay,
@@ -171,7 +177,12 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
             action: 'leave_batch_create',
             employeeId: employee.id,
             employeeName: employee.name,
-            details: { leaveType, count: newRecords.length, days: totalDaysDeducted }
+            details: {
+                leaveType,
+                count: newRecords.length,
+                days: totalDaysDeducted,
+                dateRange: `${sortedDatesList[0]} ~ ${sortedDatesList[sortedDatesList.length - 1]}`
+            }
         });
         await addAuditLog(log);
 
@@ -181,7 +192,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
     };
 
     const handleDeleteExistingLeave = async (leave: LeaveRecord) => {
-        if (confirm(`確定要取消並刪除【${leave.employeeName}】於 ${leave.startDate} 的${leave.leaveType === 'annual' ? '特休' : '排休'}（${leave.days} 天）嗎？\n\n系統將自動退回 ${leave.days} 天額度給該員工！`)) {
+        if (confirm(`確定要取消並刪除【${leave.employeeName}】於 ${leave.startDate} 的${leave.customTitle ? `「${leave.customTitle}」` : leave.leaveType === 'annual' ? '特休' : '排休'}（${leave.days} 天）嗎？\n\n系統將自動退回 ${leave.days} 天額度給該員工！`)) {
             await deleteLeave(leave.id);
             setManagingLeave(null);
             alert(`已成功取消排休，已退回 ${leave.days} 天額度！`);
@@ -196,20 +207,22 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
 
     const sortedDates = Object.keys(datesConfig).sort();
     const themeColor = leaveType === 'annual' ? 'orange' : 'blue';
-    const totalReviewDays = Object.values(datesConfig).reduce((acc, curr) => acc + (curr.isFullDay ? 1 : curr.slots.length * 0.5), 0);
+    const totalReviewDays = Object.values(datesConfig).reduce((acc, curr) => acc + (curr.days ?? (curr.isFullDay ? 1 : curr.slots.length * 0.5)), 0);
 
     return (
         <div className="space-y-6 h-full flex flex-col">
+            {/* Top Bar */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-shrink-0">
                 <div>
                     <h2 className="text-3xl font-black text-midnight-blue tracking-tight">排休申請與管理</h2>
-                    <p className="text-slate-500 font-medium text-sm mt-0.5">點選日曆登記排休、更正日期時段或取消刪除排休</p>
+                    <p className="text-slate-500 font-medium text-sm mt-0.5">預設排休、點擊切換特休，支援 ±0.25/0.5/1 自訂名目排休與額度調整</p>
                 </div>
 
-                <div className="flex flex-wrap gap-4 w-full md:w-auto items-center">
-                    <div className="relative group min-w-[220px] flex-1 md:flex-none">
+                <div className="flex flex-wrap gap-3 w-full md:w-auto items-center">
+                    {/* Employee Select */}
+                    <div className="relative group min-w-[200px] flex-1 md:flex-none">
                         <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
-                            <User size={20} />
+                            <User size={18} />
                         </div>
                         <select
                             data-testid="leave-employee-select"
@@ -218,46 +231,53 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                                 setSelectedEmployee(e.target.value);
                                 setDatesConfig({});
                             }}
-                            className="w-full pl-10 pr-10 py-3 bg-white border-2 border-slate-200 rounded-2xl font-bold text-slate-700 appearance-none focus:outline-none focus:border-midnight-blue hover:border-slate-300 transition-all shadow-xs"
+                            className="w-full pl-9 pr-8 py-2.5 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 appearance-none focus:outline-none focus:border-midnight-blue hover:border-slate-300 transition-all shadow-xs text-sm"
                         >
-                            <option value="">請選擇請假員工</option>
+                            <option value="">請選擇員工</option>
                             {filteredEmployees.map(emp => (
                                 <option key={emp.id} value={emp.id}>{emp.name} ({emp.branch})</option>
                             ))}
                         </select>
                         <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-slate-400">
-                            <ChevronDown size={20} />
+                            <ChevronDown size={16} />
                         </div>
                     </div>
 
-                    <div className="flex bg-slate-100 rounded-2xl p-1.5 border border-slate-200/50 shadow-inner relative">
-                        <div
-                            className={`absolute top-1.5 bottom-1.5 rounded-xl bg-white shadow-sm transition-all duration-300 ease-out z-0`}
-                            style={{
-                                width: 'calc(50% - 6px)',
-                                left: leaveType === 'annual' ? '6px' : 'calc(50%)'
-                            }}
-                        />
-
+                    {/* Leave Type Toggle (預設排休，點擊切換特休) */}
+                    <div className="flex bg-slate-100 rounded-xl p-1 border border-slate-200/50 shadow-inner relative">
                         <button
-                            onClick={() => setLeaveType('annual')}
-                            className={`relative z-10 flex-1 px-5 py-2 rounded-xl font-black text-xs sm:text-sm transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer ${leaveType === 'annual' ? 'text-orange-600 scale-105' : 'text-slate-400 hover:text-slate-600'}`}
+                            type="button"
+                            onClick={() => setLeaveType('personal')}
+                            className={`px-4 py-2 rounded-lg font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer select-none ${leaveType === 'personal' ? 'bg-blue-600 text-white shadow-sm scale-105' : 'text-slate-500 hover:text-slate-700'}`}
                         >
-                            <div className={`w-2 h-2 rounded-full ${leaveType === 'annual' ? 'bg-orange-500' : 'bg-slate-300'}`} />
+                            <div className={`w-2 h-2 rounded-full ${leaveType === 'personal' ? 'bg-white' : 'bg-blue-400'}`} />
+                            排休 (預設)
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setLeaveType('annual')}
+                            className={`px-4 py-2 rounded-lg font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer select-none ${leaveType === 'annual' ? 'bg-orange-500 text-white shadow-sm scale-105' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <div className={`w-2 h-2 rounded-full ${leaveType === 'annual' ? 'bg-white' : 'bg-orange-400'}`} />
                             特休
                         </button>
-                        <button
-                            onClick={() => setLeaveType('personal')}
-                            className={`relative z-10 flex-1 px-5 py-2 rounded-xl font-black text-xs sm:text-sm transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer ${leaveType === 'personal' ? 'text-blue-600 scale-105' : 'text-slate-400 hover:text-slate-600'}`}
-                        >
-                            <div className={`w-2 h-2 rounded-full ${leaveType === 'personal' ? 'bg-blue-500' : 'bg-slate-300'}`} />
-                            排休
-                        </button>
                     </div>
+
+                    {/* Custom Title / Special Adjustment Button */}
+                    <button
+                        type="button"
+                        onClick={() => setIsCustomModalOpen(true)}
+                        className="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                        <Sparkles size={16} />
+                        自訂名目增減 / 特殊排假
+                    </button>
                 </div>
             </div>
 
+            {/* Main Area */}
             <div className="flex-1 flex flex-col lg:grid lg:grid-cols-12 gap-6 min-h-0">
+                {/* Left Panel */}
                 <div className="lg:col-span-4 flex flex-col gap-4 overflow-hidden order-2 lg:order-1">
                     <div className="flex bg-white rounded-2xl p-1 shadow-sm border border-slate-200">
                         <button
@@ -305,6 +325,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                                 ) : (
                                     sortedDates.map(dateStr => {
                                         const config = datesConfig[dateStr];
+                                        const displayDays = config.days ?? (config.isFullDay ? 1 : config.slots.length * 0.5);
                                         return (
                                             <div key={dateStr} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 hover:border-slate-300 transition-all group">
                                                 <div className="flex justify-between items-start">
@@ -312,9 +333,14 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                                                         <div className="font-black text-slate-800 text-sm">
                                                             {dateStr} <span className="text-xs font-normal text-slate-400">({new Date(dateStr).toLocaleDateString('zh-TW', { weekday: 'narrow' })})</span>
                                                         </div>
-                                                        <div className="text-xs font-bold text-slate-500 mt-1 flex flex-wrap gap-1">
+                                                        <div className="text-xs font-bold text-slate-500 mt-1 flex flex-wrap gap-1 items-center">
+                                                            {config.customTitle && (
+                                                                <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-700 font-black">
+                                                                    {config.customTitle}
+                                                                </span>
+                                                            )}
                                                             <span className={`px-2 py-0.5 rounded-md ${config.isFullDay ? 'bg-slate-200 text-slate-700' : 'bg-indigo-50 text-indigo-700 border border-indigo-100'}`}>
-                                                                {config.isFullDay ? '全天 (1.0天)' : `時段 (${config.slots.length * 0.5}天)`}
+                                                                {displayDays} 天
                                                             </span>
                                                             {config.note && <span className="text-slate-400 truncate max-w-[100px]">- {config.note}</span>}
                                                         </div>
@@ -323,7 +349,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                                                         <button
                                                             onClick={() => setEditingDate(dateStr)}
                                                             className="p-1.5 text-slate-400 hover:text-midnight-blue hover:bg-white rounded-lg transition-colors cursor-pointer"
-                                                            title="設定時段/備註"
+                                                            title="設定天數/時段/名目"
                                                         >
                                                             <Edit2 size={14} />
                                                         </button>
@@ -346,7 +372,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                                 <div className="p-4 border-t border-slate-100 flex-shrink-0 bg-white">
                                     <button
                                         onClick={handlePreSubmit}
-                                        className={`w-full py-3 rounded-xl shadow-lg font-black text-white text-sm transition-all flex items-center justify-center gap-2 cursor-pointer select-none ${leaveType === 'annual' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-500 hover:bg-blue-600'} active:scale-95`}
+                                        className={`w-full py-3 rounded-xl shadow-lg font-black text-white text-sm transition-all flex items-center justify-center gap-2 cursor-pointer select-none ${leaveType === 'annual' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'} active:scale-95`}
                                     >
                                         <Check size={18} />
                                         確認送出排休 ({sortedDates.length} 筆)
@@ -379,8 +405,13 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                                             className="p-3.5 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-200/80 transition-all flex items-center justify-between gap-2 group shadow-2xs"
                                         >
                                             <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 flex-wrap">
                                                     <span className="font-black text-slate-800 text-sm">{leave.startDate}</span>
+                                                    {leave.customTitle && (
+                                                        <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-100 text-purple-700 border border-purple-200">
+                                                            {leave.customTitle}
+                                                        </span>
+                                                    )}
                                                     <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${leave.leaveType === 'annual' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
                                                         {leave.leaveType === 'annual' ? '特休' : '排休'} {leave.days}天
                                                     </span>
@@ -417,6 +448,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                     )}
                 </div>
 
+                {/* Right Panel: Calendar */}
                 <div className="lg:col-span-8 flex flex-col h-full min-h-0 order-1 lg:order-2">
                     <div className="bg-white rounded-[2rem] p-6 lg:p-7 shadow-xl border border-slate-100 h-full flex flex-col overflow-hidden relative">
                         <div className="flex justify-between items-center mb-4 flex-shrink-0 z-10">
@@ -432,23 +464,24 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                                 </h3>
                                 {selectedEmployee && (
                                     <p className="text-xs text-slate-400 font-bold mt-0.5">
-                                        💡 提示：點擊空白日期可排休；點擊<span className="text-orange-500 font-black">已排休格子</span>可直接更正或刪除
+                                        💡 目前排休模式：<span className={leaveType === 'personal' ? 'text-blue-600 font-black' : 'text-orange-500 font-black'}>{leaveType === 'personal' ? '排休 (預設)' : '特休'}</span>，點擊已排休格子可更正或刪除
                                     </p>
                                 )}
                             </div>
 
                             <div className="flex gap-3 text-xs font-bold">
+                                <span className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
+                                    <div className="w-2 h-2 bg-blue-500 rounded-full" />
+                                    排休 (預設)
+                                </span>
                                 <span className="flex items-center gap-1.5 px-2.5 py-1 bg-orange-50 text-orange-700 rounded-lg border border-orange-200">
                                     <div className="w-2 h-2 bg-orange-500 rounded-full" />
                                     特休
                                 </span>
-                                <span className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
-                                    <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                                    排休
-                                </span>
                             </div>
                         </div>
 
+                        {/* Calendar Grid */}
                         <div className="flex-1 min-h-0 relative flex flex-col">
                             <div className="grid grid-cols-7 mb-2">
                                 {weekDays.map(day => (
@@ -475,7 +508,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                                     } else if (isNewlySelected) {
                                         containerClasses += leaveType === 'annual'
                                             ? "bg-orange-500 border-orange-500 text-white shadow-md transform scale-[0.98] z-10 cursor-pointer"
-                                            : "bg-blue-500 border-blue-500 text-white shadow-md transform scale-[0.98] z-10 cursor-pointer";
+                                            : "bg-blue-600 border-blue-600 text-white shadow-md transform scale-[0.98] z-10 cursor-pointer";
                                     } else {
                                         containerClasses += isToday
                                             ? "border-midnight-blue bg-midnight-blue/5 text-midnight-blue hover:bg-midnight-blue/10 cursor-pointer"
@@ -506,7 +539,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                                             {existingLeave && (
                                                 <div className="w-full text-center">
                                                     <span className={`text-[10px] font-black block px-1 py-0.5 rounded-md ${existingLeave.leaveType === 'annual' ? 'bg-orange-200/80 text-orange-900' : 'bg-blue-200/80 text-blue-900'}`}>
-                                                        已排{existingLeave.leaveType === 'annual' ? '特休' : '排休'}
+                                                        {existingLeave.customTitle || (existingLeave.leaveType === 'annual' ? '特休' : '排休')}
                                                     </span>
                                                     <span className="text-[9px] font-bold text-slate-500 block mt-0.5">
                                                         {existingLeave.days}天 {existingLeave.timeSlot ? `(${existingLeave.timeSlot})` : ''}
@@ -518,7 +551,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                                                 <div className="w-full text-center">
                                                     <div className="bg-white/20 backdrop-blur-sm rounded-md px-1 py-0.5">
                                                         <span className="text-[10px] font-black leading-tight block text-center">
-                                                            {newConfig.isFullDay ? '1.0 天' : `${newConfig.slots.length * 0.5} 天`}
+                                                            {newConfig.days ?? (newConfig.isFullDay ? 1 : newConfig.slots.length * 0.5)} 天
                                                         </span>
                                                     </div>
                                                 </div>
@@ -534,6 +567,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                 </div>
             </div>
 
+            {/* Modal: Edit New Leave Slot/Note */}
             {editingDate && (
                 <DetailModal
                     dateStr={editingDate}
@@ -544,6 +578,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                 />
             )}
 
+            {/* Modal: Review Batch Submit */}
             {isReviewOpen && (
                 <ReviewModal
                     employeeName={filteredEmployees.find(e => e.id === selectedEmployee)?.name || ''}
@@ -557,12 +592,22 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                 />
             )}
 
+            {/* Modal: Manage / Edit / Move / Delete Existing Leave */}
             {managingLeave && (
                 <ManageExistingLeaveModal
                     leave={managingLeave}
                     onUpdate={handleUpdateExistingLeave}
                     onDelete={handleDeleteExistingLeave}
                     onClose={() => setManagingLeave(null)}
+                />
+            )}
+
+            {/* Modal: 自訂名目排休與額度增減 */}
+            {isCustomModalOpen && (
+                <CustomLeaveModal
+                    employees={filteredEmployees}
+                    selectedEmpId={selectedEmployee}
+                    onClose={() => setIsCustomModalOpen(false)}
                 />
             )}
 
@@ -575,6 +620,445 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
     );
 }
 
+/**
+ * 彈窗：自訂名目假期調整與彈性排假 (支援 ±0.25/0.5/1 與是否指定日期)
+ */
+function CustomLeaveModal({ employees, selectedEmpId, onClose }: {
+    employees: any[];
+    selectedEmpId: string;
+    onClose: () => void;
+}) {
+    const { addLeave, updateEmployee, addAuditLog } = useLeaveSystem();
+    const [empId, setEmpId] = useState(selectedEmpId || (employees[0]?.id ?? ''));
+    const [title, setTitle] = useState('');
+    const [targetLeaveType, setTargetLeaveType] = useState<'personal' | 'annual'>('personal');
+    const [amount, setAmount] = useState<number>(1);
+    const [specifyDate, setSpecifyDate] = useState<boolean>(false);
+    const [leaveDate, setLeaveDate] = useState(new Date().toISOString().split('T')[0]);
+    const [note, setNote] = useState('');
+
+    const quickTitles = ['颱風假補償', '加班補休', '值班津貼折抵', '專案獎勵', '事假扣除', '生理假折抵', '特殊排休'];
+    const quickSteps = [1, 0.5, 0.25, -0.25, -0.5, -1];
+
+    const currentEmp = employees.find(e => e.id === empId);
+
+    const handleSubmit = async () => {
+        if (!currentEmp) {
+            alert('請選擇有效員工');
+            return;
+        }
+
+        const customName = title.trim() || '自訂名目假期';
+
+        if (specifyDate) {
+            // 模式 1: 指定日期排假
+            if (!leaveDate) {
+                alert('請選擇排休日期');
+                return;
+            }
+
+            const newRecord: LeaveRecord = {
+                id: `leave-custom-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                employeeId: currentEmp.id,
+                employeeName: currentEmp.name,
+                branch: currentEmp.branch,
+                leaveType: targetLeaveType,
+                customTitle: customName,
+                startDate: leaveDate,
+                endDate: leaveDate,
+                isFullDay: Math.abs(amount) >= 1,
+                days: Math.abs(amount),
+                note: note.trim(),
+                createdAt: new Date().toISOString()
+            };
+
+            await addLeave(newRecord);
+
+            // 更新員工已用額度
+            const updated = { ...currentEmp };
+            if (targetLeaveType === 'annual') {
+                updated.annualLeave = {
+                    ...updated.annualLeave,
+                    used: updated.annualLeave.used + Math.abs(amount)
+                };
+            } else {
+                updated.personalLeave = {
+                    ...updated.personalLeave,
+                    used: updated.personalLeave.used + Math.abs(amount)
+                };
+            }
+            await updateEmployee(updated);
+
+            const log = createAuditLog({
+                category: 'leave',
+                action: 'leave_create',
+                employeeId: currentEmp.id,
+                employeeName: currentEmp.name,
+                details: {
+                    customTitle: customName,
+                    date: leaveDate,
+                    days: Math.abs(amount),
+                    leaveType: targetLeaveType,
+                    note: note.trim()
+                }
+            });
+            await addAuditLog(log);
+
+            alert(`已成功為【${currentEmp.name}】在 ${leaveDate} 登記「${customName}」${Math.abs(amount)} 天！`);
+        } else {
+            // 模式 2: 不指定日期（純額度增減）
+            const updated = { ...currentEmp };
+            const before = targetLeaveType === 'annual'
+                ? (updated.annualLeave.initial + updated.annualLeave.earned + (updated.annualLeave.adjustment || 0) - updated.annualLeave.used)
+                : (updated.personalLeave.initial + updated.personalLeave.earned + (updated.personalLeave.adjustment || 0) - updated.personalLeave.used);
+
+            if (targetLeaveType === 'annual') {
+                updated.annualLeave = {
+                    ...updated.annualLeave,
+                    adjustment: (updated.annualLeave.adjustment || 0) + amount
+                };
+            } else {
+                updated.personalLeave = {
+                    ...updated.personalLeave,
+                    adjustment: (updated.personalLeave.adjustment || 0) + amount
+                };
+            }
+            await updateEmployee(updated);
+
+            const after = before + amount;
+
+            const log = createAuditLog({
+                category: 'employee',
+                action: targetLeaveType === 'annual' ? 'adjust_annual' : 'adjust_personal',
+                employeeId: currentEmp.id,
+                employeeName: currentEmp.name,
+                before,
+                after,
+                amount,
+                reason: `${customName}${note ? ` (${note})` : ''}`
+            });
+            await addAuditLog(log);
+
+            alert(`已成功調整【${currentEmp.name}】的${targetLeaveType === 'annual' ? '特休' : '排休'}額度：${amount > 0 ? `+${amount}` : amount} 天（名目：${customName}）！`);
+        }
+
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-[2rem] p-6 max-w-lg w-full shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                        <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                            <Sparkles size={20} />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-black text-midnight-blue">自訂名目假期調整 / 特殊排假</h3>
+                            <p className="text-xs text-slate-400 font-bold">自由指定名目、調整 ±0.25/0.5/1 天與可選指定日期</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors">
+                        <X size={20} />
+                    </button>
+                </div>
+
+                <div className="space-y-4 text-xs font-bold text-slate-700">
+                    {/* 選擇員工 */}
+                    <div>
+                        <label className="block text-slate-500 uppercase tracking-wider mb-1.5">目標員工</label>
+                        <select
+                            value={empId}
+                            onChange={(e) => setEmpId(e.target.value)}
+                            className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-600 outline-none"
+                        >
+                            {employees.map(e => (
+                                <option key={e.id} value={e.id}>{e.name} ({e.branch})</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* 自訂名目 */}
+                    <div>
+                        <label className="block text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                            <Tag size={12} />
+                            假期名目 / 事由名稱
+                        </label>
+                        <input
+                            type="text"
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            placeholder="請輸入名目（例如：颱風假補償、加班折抵...）"
+                            className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-600 outline-none text-sm"
+                        />
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                            {quickTitles.map(t => (
+                                <button
+                                    key={t}
+                                    type="button"
+                                    onClick={() => setTitle(t)}
+                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${title === t ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'}`}
+                                >
+                                    {t}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* 對應假別 */}
+                    <div>
+                        <label className="block text-slate-500 uppercase tracking-wider mb-1.5">關聯假別</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setTargetLeaveType('personal')}
+                                className={`py-2.5 rounded-xl font-black text-xs border-2 transition-all cursor-pointer ${targetLeaveType === 'personal' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500'}`}
+                            >
+                                排休 (Personal Leave)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setTargetLeaveType('annual')}
+                                className={`py-2.5 rounded-xl font-black text-xs border-2 transition-all cursor-pointer ${targetLeaveType === 'annual' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-500'}`}
+                            >
+                                特休 (Annual Leave)
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* 調整幅度 */}
+                    <div>
+                        <label className="block text-slate-500 uppercase tracking-wider mb-1.5">調整天數幅度</label>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 mb-2">
+                            {quickSteps.map(step => (
+                                <button
+                                    key={step}
+                                    type="button"
+                                    onClick={() => setAmount(step)}
+                                    className={`py-2 rounded-lg font-black text-xs border transition-all cursor-pointer ${amount === step
+                                        ? (step > 0 ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-rose-600 text-white border-rose-600')
+                                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                                        }`}
+                                >
+                                    {step > 0 ? `+${step}` : step} 天
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-slate-400">或自訂數值：</span>
+                            <input
+                                type="number"
+                                step="0.25"
+                                value={amount}
+                                onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
+                                className="w-28 px-3 py-1.5 border border-slate-200 rounded-lg font-black text-center text-sm focus:border-indigo-600 outline-none"
+                            />
+                            <span className="text-slate-400">天</span>
+                        </div>
+                    </div>
+
+                    {/* 模式切換：指定日期 vs 不指定日期 */}
+                    <div className="pt-2 border-t border-slate-100">
+                        <label className="block text-slate-500 uppercase tracking-wider mb-1.5">排假模式</label>
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                            <button
+                                type="button"
+                                onClick={() => setSpecifyDate(false)}
+                                className={`py-2.5 rounded-xl font-black text-xs border-2 transition-all cursor-pointer ${!specifyDate ? 'border-midnight-blue bg-midnight-blue text-white' : 'border-slate-200 text-slate-500'}`}
+                            >
+                                不指定日期（純額度增減）
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSpecifyDate(true)}
+                                className={`py-2.5 rounded-xl font-black text-xs border-2 transition-all cursor-pointer ${specifyDate ? 'border-midnight-blue bg-midnight-blue text-white' : 'border-slate-200 text-slate-500'}`}
+                            >
+                                指定日期（登記排假）
+                            </button>
+                        </div>
+
+                        {specifyDate && (
+                            <div className="p-3.5 bg-indigo-50/60 rounded-xl border border-indigo-100 mb-2">
+                                <label className="block text-indigo-900 font-black mb-1">選擇排休日期</label>
+                                <input
+                                    type="date"
+                                    value={leaveDate}
+                                    onChange={(e) => setLeaveDate(e.target.value)}
+                                    className="w-full px-3 py-2 border border-indigo-200 rounded-lg font-bold text-slate-800 bg-white"
+                                />
+                                <p className="text-[11px] text-indigo-700 mt-1">送出後將在該日期建立排休卡片，並扣減相應額度</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 備註 */}
+                    <div>
+                        <label className="block text-slate-500 uppercase tracking-wider mb-1.5">詳細備註（選填）</label>
+                        <input
+                            type="text"
+                            value={note}
+                            onChange={(e) => setNote(e.target.value)}
+                            placeholder="選填補充說明..."
+                            className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-600 outline-none"
+                        />
+                    </div>
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-slate-100 flex gap-3">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                    >
+                        取消
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleSubmit}
+                        className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs shadow-lg transition-all cursor-pointer"
+                    >
+                        確認執行增減
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function DetailModal({ dateStr, initialConfig, themeColor, onSave, onClose }: {
+    dateStr: string;
+    initialConfig: DateConfig;
+    themeColor: 'orange' | 'blue';
+    onSave: (config: DateConfig) => void;
+    onClose: () => void;
+}) {
+    const [config, setConfig] = useState<DateConfig>(initialConfig);
+    const [selectedDays, setSelectedDays] = useState<number>(initialConfig.days ?? (initialConfig.isFullDay ? 1 : initialConfig.slots.length * 0.5));
+    const [customTitle, setCustomTitle] = useState<string>(initialConfig.customTitle || '');
+
+    const quickDayOptions = [1, 0.75, 0.5, 0.25];
+
+    const toggleSlot = (slot: TimeSlot) => {
+        let newSlots = [...config.slots];
+        if (newSlots.includes(slot)) {
+            newSlots = newSlots.filter(s => s !== slot);
+        } else if (newSlots.length < 2) {
+            newSlots.push(slot);
+        }
+        setConfig({ ...config, slots: newSlots, days: newSlots.length * 0.5 });
+    };
+
+    const handleSave = () => {
+        onSave({
+            ...config,
+            days: selectedDays,
+            isFullDay: selectedDays >= 1,
+            customTitle: customTitle.trim() || undefined
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-[2rem] p-6 max-w-md w-full shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+                <div className="flex justify-between items-center mb-5 pb-3 border-b border-slate-100">
+                    <div>
+                        <h3 className="text-xl font-black text-midnight-blue">設定排休細項與時數</h3>
+                        <p className="text-xs font-bold text-slate-400">{dateStr}</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors">
+                        <X size={20} />
+                    </button>
+                </div>
+
+                <div className="space-y-4 text-xs font-bold text-slate-700">
+                    <div>
+                        <label className="block text-slate-500 uppercase tracking-wider mb-1.5">排休長度 / 天數</label>
+                        <div className="grid grid-cols-4 gap-2 mb-2">
+                            {quickDayOptions.map(dayVal => (
+                                <button
+                                    key={dayVal}
+                                    type="button"
+                                    onClick={() => setSelectedDays(dayVal)}
+                                    className={`py-2.5 rounded-xl font-black text-xs border-2 transition-all cursor-pointer ${selectedDays === dayVal
+                                        ? `border-${themeColor}-500 bg-${themeColor}-50 text-${themeColor}-600 shadow-xs`
+                                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                                        }`}
+                                >
+                                    {dayVal} 天
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-slate-500 uppercase tracking-wider mb-1.5">自訂名目（選填）</label>
+                        <input
+                            type="text"
+                            value={customTitle}
+                            onChange={(e) => setCustomTitle(e.target.value)}
+                            placeholder="例如：颱風假、加班補休、值班折抵..."
+                            className="w-full px-3.5 py-2.5 border-2 border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-midnight-blue text-xs"
+                        />
+                    </div>
+
+                    {selectedDays < 1 && (
+                        <div>
+                            <label className="block text-slate-500 uppercase tracking-wider mb-1.5">選擇時段（選填）</label>
+                            <div className="grid grid-cols-3 gap-2">
+                                {(['morning', 'afternoon', 'evening'] as TimeSlot[]).map((slot) => {
+                                    const isSelected = config.slots.includes(slot);
+                                    const labels = { morning: '上午', afternoon: '下午', evening: '晚上' };
+                                    return (
+                                        <button
+                                            key={slot}
+                                            type="button"
+                                            onClick={() => toggleSlot(slot)}
+                                            className={`py-2 rounded-xl font-bold text-xs border-2 transition-all cursor-pointer ${isSelected
+                                                ? `border-${themeColor}-500 bg-${themeColor}-50 text-${themeColor}-600`
+                                                : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                                                }`}
+                                        >
+                                            {labels[slot]}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    <div>
+                        <label className="block text-slate-500 uppercase tracking-wider mb-1.5">備註事項 (選填)</label>
+                        <input
+                            type="text"
+                            value={config.note}
+                            onChange={(e) => setConfig({ ...config, note: e.target.value })}
+                            placeholder="例如：私人事由、回診..."
+                            className="w-full px-3.5 py-2.5 border-2 border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-midnight-blue text-xs"
+                        />
+                    </div>
+                </div>
+
+                <div className="mt-6 pt-3 border-t border-slate-100 flex gap-3">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                    >
+                        取消
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleSave}
+                        className={`flex-1 py-2.5 bg-${themeColor}-500 hover:bg-${themeColor}-600 text-white rounded-xl font-black text-xs shadow-lg transition-all cursor-pointer`}
+                    >
+                        確認儲存
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function ManageExistingLeaveModal({ leave, onUpdate, onDelete, onClose }: {
     leave: LeaveRecord;
     onUpdate: (updated: LeaveRecord, original: LeaveRecord) => Promise<void>;
@@ -583,9 +1067,12 @@ function ManageExistingLeaveModal({ leave, onUpdate, onDelete, onClose }: {
 }) {
     const [targetDate, setTargetDate] = useState(leave.startDate);
     const [targetType, setTargetType] = useState<'annual' | 'personal'>(leave.leaveType);
-    const [isFullDay, setIsFullDay] = useState(leave.isFullDay ?? true);
+    const [days, setDays] = useState<number>(leave.days);
+    const [customTitle, setCustomTitle] = useState(leave.customTitle || '');
     const [selectedSlots, setSelectedSlots] = useState<TimeSlot[]>(leave.slots || []);
     const [note, setNote] = useState(leave.note || '');
+
+    const quickDayOptions = [1, 0.75, 0.5, 0.25];
 
     const toggleSlot = (slot: TimeSlot) => {
         let newSlots = [...selectedSlots];
@@ -604,18 +1091,18 @@ function ManageExistingLeaveModal({ leave, onUpdate, onDelete, onClose }: {
         }
 
         const slotMap: Record<TimeSlot, string> = { morning: '上午', afternoon: '下午', evening: '晚上' };
-        const calculatedDays = isFullDay ? 1 : Math.max(0.5, selectedSlots.length * 0.5);
-        const timeSlotDesc = isFullDay ? undefined : selectedSlots.map(s => slotMap[s]).join('、');
+        const timeSlotDesc = days >= 1 ? undefined : selectedSlots.map(s => slotMap[s]).join('、');
 
         const updatedLeave: LeaveRecord = {
             ...leave,
             startDate: targetDate,
             endDate: targetDate,
             leaveType: targetType,
-            isFullDay,
-            slots: isFullDay ? undefined : selectedSlots,
+            customTitle: customTitle.trim() || undefined,
+            isFullDay: days >= 1,
+            slots: days >= 1 ? undefined : selectedSlots,
             timeSlot: timeSlotDesc,
-            days: calculatedDays,
+            days: days,
             note: note.trim()
         };
 
@@ -656,58 +1143,68 @@ function ManageExistingLeaveModal({ leave, onUpdate, onDelete, onClose }: {
                         <div className="grid grid-cols-2 gap-2">
                             <button
                                 type="button"
-                                onClick={() => setTargetType('annual')}
-                                className={`py-2.5 rounded-xl font-black text-xs border-2 transition-all cursor-pointer ${targetType === 'annual' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
-                            >
-                                特休 (Annual Leave)
-                            </button>
-                            <button
-                                type="button"
                                 onClick={() => setTargetType('personal')}
                                 className={`py-2.5 rounded-xl font-black text-xs border-2 transition-all cursor-pointer ${targetType === 'personal' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
                             >
                                 排休 (Personal Leave)
                             </button>
+                            <button
+                                type="button"
+                                onClick={() => setTargetType('annual')}
+                                className={`py-2.5 rounded-xl font-black text-xs border-2 transition-all cursor-pointer ${targetType === 'annual' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                            >
+                                特休 (Annual Leave)
+                            </button>
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-xs font-black text-slate-600 uppercase tracking-wider mb-1.5">時段長度</label>
-                        <div className="flex gap-2 mb-2">
-                            <button
-                                type="button"
-                                onClick={() => setIsFullDay(true)}
-                                className={`flex-1 py-2 rounded-xl font-black text-xs border-2 transition-all cursor-pointer ${isFullDay ? 'border-midnight-blue bg-midnight-blue text-white' : 'border-slate-200 text-slate-500'}`}
-                            >
-                                全天 (1.0 天)
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setIsFullDay(false)}
-                                className={`flex-1 py-2 rounded-xl font-black text-xs border-2 transition-all cursor-pointer ${!isFullDay ? 'border-midnight-blue bg-midnight-blue text-white' : 'border-slate-200 text-slate-500'}`}
-                            >
-                                部分時段 (0.5/1.0 天)
-                            </button>
+                        <label className="block text-xs font-black text-slate-600 uppercase tracking-wider mb-1.5">排休天數</label>
+                        <div className="grid grid-cols-4 gap-2 mb-2">
+                            {quickDayOptions.map(d => (
+                                <button
+                                    key={d}
+                                    type="button"
+                                    onClick={() => setDays(d)}
+                                    className={`py-2 rounded-xl font-black text-xs border-2 transition-all cursor-pointer ${days === d ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600'}`}
+                                >
+                                    {d} 天
+                                </button>
+                            ))}
                         </div>
+                    </div>
 
-                        {!isFullDay && (
-                            <div className="grid grid-cols-3 gap-2 pt-1">
+                    {days < 1 && (
+                        <div>
+                            <label className="block text-xs font-black text-slate-600 uppercase tracking-wider mb-1.5">選擇時段（選填）</label>
+                            <div className="grid grid-cols-3 gap-2">
                                 {(['morning', 'afternoon', 'evening'] as TimeSlot[]).map((slot) => {
-                                    const labels = { morning: '上午 (早)', afternoon: '下午 (中)', evening: '晚上 (晚)' };
+                                    const labels = { morning: '上午', afternoon: '下午', evening: '晚上' };
                                     const isSelected = selectedSlots.includes(slot);
                                     return (
                                         <button
                                             key={slot}
                                             type="button"
                                             onClick={() => toggleSlot(slot)}
-                                            className={`py-2 rounded-xl font-bold text-xs border transition-all cursor-pointer ${isSelected ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+                                            className={`py-2 rounded-xl font-bold text-xs border transition-all cursor-pointer ${isSelected ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600'}`}
                                         >
                                             {labels[slot]}
                                         </button>
                                     );
                                 })}
                             </div>
-                        )}
+                        </div>
+                    )}
+
+                    <div>
+                        <label className="block text-xs font-black text-slate-600 uppercase tracking-wider mb-1.5">自訂名目（選填）</label>
+                        <input
+                            type="text"
+                            value={customTitle}
+                            onChange={(e) => setCustomTitle(e.target.value)}
+                            placeholder="例如：颱風假、加班補休..."
+                            className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-bold text-slate-800 focus:border-midnight-blue outline-none text-xs"
+                        />
                     </div>
 
                     <div>
@@ -717,7 +1214,7 @@ function ManageExistingLeaveModal({ leave, onUpdate, onDelete, onClose }: {
                             value={note}
                             onChange={(e) => setNote(e.target.value)}
                             placeholder="選填備註..."
-                            className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl font-bold text-slate-800 focus:border-midnight-blue outline-none"
+                            className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-bold text-slate-800 focus:border-midnight-blue outline-none"
                         />
                     </div>
                 </div>
@@ -748,123 +1245,6 @@ function ManageExistingLeaveModal({ leave, onUpdate, onDelete, onClose }: {
                             儲存更正
                         </button>
                     </div>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function DetailModal({ dateStr, initialConfig, themeColor, onSave, onClose }: {
-    dateStr: string;
-    initialConfig: DateConfig;
-    themeColor: 'orange' | 'blue';
-    onSave: (config: DateConfig) => void;
-    onClose: () => void;
-}) {
-    const [config, setConfig] = useState<DateConfig>(initialConfig);
-
-    const toggleSlot = (slot: TimeSlot) => {
-        let newSlots = [...config.slots];
-        if (newSlots.includes(slot)) {
-            newSlots = newSlots.filter(s => s !== slot);
-        } else if (newSlots.length < 2) {
-            newSlots.push(slot);
-        }
-        setConfig({ ...config, slots: newSlots });
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-[2rem] p-6 max-w-md w-full shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
-                <div className="flex justify-between items-center mb-6">
-                    <div>
-                        <h3 className="text-xl font-black text-midnight-blue">設定排休細項</h3>
-                        <p className="text-sm font-bold text-slate-400">{dateStr}</p>
-                    </div>
-                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors">
-                        <X size={20} />
-                    </button>
-                </div>
-
-                <div className="space-y-6">
-                    <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-2">排休類型</label>
-                        <div className="grid grid-cols-2 gap-3">
-                            <button
-                                type="button"
-                                onClick={() => setConfig({ ...config, isFullDay: true, slots: [] })}
-                                className={`py-3 rounded-xl font-bold text-sm border-2 transition-all cursor-pointer ${config.isFullDay
-                                    ? `border-${themeColor}-500 bg-${themeColor}-50 text-${themeColor}-600`
-                                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                                    }`}
-                            >
-                                全天 (1.0 天)
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setConfig({ ...config, isFullDay: false })}
-                                className={`py-3 rounded-xl font-bold text-sm border-2 transition-all cursor-pointer ${!config.isFullDay
-                                    ? `border-${themeColor}-500 bg-${themeColor}-50 text-${themeColor}-600`
-                                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                                    }`}
-                            >
-                                時段 (0.5 天/段)
-                            </button>
-                        </div>
-                    </div>
-
-                    {!config.isFullDay && (
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-2">選擇時段 (最多 2 個)</label>
-                            <div className="grid grid-cols-3 gap-2">
-                                {(['morning', 'afternoon', 'evening'] as TimeSlot[]).map((slot) => {
-                                    const isSelected = config.slots.includes(slot);
-                                    const labels = { morning: '上午', afternoon: '下午', evening: '晚上' };
-                                    return (
-                                        <button
-                                            key={slot}
-                                            type="button"
-                                            onClick={() => toggleSlot(slot)}
-                                            className={`py-2.5 rounded-xl font-bold text-xs border-2 transition-all cursor-pointer ${isSelected
-                                                ? `border-${themeColor}-500 bg-${themeColor}-50 text-${themeColor}-600`
-                                                : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                                                }`}
-                                        >
-                                            {labels[slot]}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-                    <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-2">備註事項 (選填)</label>
-                        <input
-                            type="text"
-                            value={config.note}
-                            onChange={(e) => setConfig({ ...config, note: e.target.value })}
-                            placeholder="例如：私人事由、回診..."
-                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl font-bold focus:outline-none focus:border-midnight-blue"
-                        />
-                    </div>
-                </div>
-
-                <div className="mt-8 flex gap-3">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors cursor-pointer"
-                    >
-                        取消
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => onSave(config)}
-                        className={`flex-1 py-3 bg-${themeColor}-500 hover:bg-${themeColor}-600 text-white rounded-xl font-bold shadow-lg transition-all cursor-pointer`}
-                    >
-                        確認儲存
-                    </button>
                 </div>
             </div>
         </div>
@@ -914,12 +1294,18 @@ function ReviewModal({ employeeName, leaveType, datesConfig, totalDays, themeCol
                         <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                             {dates.map(dateStr => {
                                 const config = datesConfig[dateStr];
+                                const d = config.days ?? (config.isFullDay ? 1 : config.slots.length * 0.5);
                                 return (
                                     <div key={dateStr} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-200">
                                         <div>
                                             <span className="font-bold text-slate-700">{dateStr}</span>
+                                            {config.customTitle && (
+                                                <span className="px-2 py-0.5 rounded text-xs bg-purple-100 text-purple-700 font-black ml-2">
+                                                    {config.customTitle}
+                                                </span>
+                                            )}
                                             <span className="text-xs text-slate-400 ml-2">
-                                                {config.isFullDay ? '全天' : `時段 (${config.slots.length * 0.5}天)`}
+                                                {d} 天
                                             </span>
                                             {config.note && <span className="text-xs text-slate-500 ml-2">({config.note})</span>}
                                         </div>
@@ -955,4 +1341,3 @@ function ReviewModal({ employeeName, leaveType, datesConfig, totalDays, themeCol
 }
 
 export default LeaveInputV2;
-
