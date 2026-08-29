@@ -217,6 +217,7 @@ function LeaveInputV2({ selectedBranch }: LeaveInputV2Props) {
                             <User size={20} />
                         </div>
                         <select
+                            data-testid="leave-employee-select"
                             value={selectedEmployee}
                             onChange={(e) => setSelectedEmployee(e.target.value)}
                             className="w-full pl-10 pr-10 py-3 bg-white border-2 border-slate-200 rounded-2xl font-bold text-slate-700 appearance-none focus:outline-none focus:border-midnight-blue hover:border-slate-300 transition-all shadow-sm"
