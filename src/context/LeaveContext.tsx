@@ -19,6 +19,7 @@ interface LeaveContextType {
     deleteEmployee: (id: string) => Promise<void>;
     addLeave: (leave: LeaveRecord) => Promise<void>;
     addLeaves: (leaves: LeaveRecord[]) => Promise<void>; // New
+    updateLeave: (updatedLeave: LeaveRecord, oldLeave?: LeaveRecord) => Promise<void>;
     deleteLeave: (id: string) => Promise<void>;
     addBranch: (branch: string) => Promise<void>;
     removeBranch: (branch: string) => Promise<void>;
@@ -34,6 +35,7 @@ const LeaveContext = createContext<LeaveContextType | undefined>(undefined);
 // CONFIGURATION: Choose your backend here
 // ---------------------------------------------
 import { leaveService } from '../services/serviceInstance';
+import { createAuditLog } from '../utils/auditLogger';
 // ---------------------------------------------
 
 export function LeaveProvider({ children }: { children: ReactNode }) {
@@ -120,8 +122,119 @@ export function LeaveProvider({ children }: { children: ReactNode }) {
         await refreshData(false);
     };
 
+    const updateLeave = async (updatedLeave: LeaveRecord, oldLeave?: LeaveRecord) => {
+        const original = oldLeave || leaves.find(l => l.id === updatedLeave.id);
+        
+        // Optimistic UI update
+        setLeaves(prev => prev.map(l => l.id === updatedLeave.id ? updatedLeave : l));
+
+        if (original) {
+            const emp = employees.find(e => e.id === updatedLeave.employeeId);
+            if (emp) {
+                const updatedEmp = { ...emp };
+                // 1. 退回原假單額度
+                if (original.leaveType === 'annual') {
+                    updatedEmp.annualLeave = {
+                        ...updatedEmp.annualLeave,
+                        used: Math.max(0, updatedEmp.annualLeave.used - original.days)
+                    };
+                } else {
+                    updatedEmp.personalLeave = {
+                        ...updatedEmp.personalLeave,
+                        used: Math.max(0, updatedEmp.personalLeave.used - original.days)
+                    };
+                }
+
+                // 2. 扣除新假單額度
+                if (updatedLeave.leaveType === 'annual') {
+                    updatedEmp.annualLeave = {
+                        ...updatedEmp.annualLeave,
+                        used: updatedEmp.annualLeave.used + updatedLeave.days
+                    };
+                } else {
+                    updatedEmp.personalLeave = {
+                        ...updatedEmp.personalLeave,
+                        used: updatedEmp.personalLeave.used + updatedLeave.days
+                    };
+                }
+
+                await updateEmployee(updatedEmp);
+            }
+        }
+
+        try {
+            await leaveService.updateLeave(updatedLeave);
+        } catch (err) {
+            console.warn('updateLeave storage error:', err);
+        }
+
+        // Log audit
+        try {
+            const log = createAuditLog({
+                category: 'leave',
+                action: 'leave_update',
+                employeeId: updatedLeave.employeeId,
+                employeeName: updatedLeave.employeeName,
+                details: {
+                    leaveId: updatedLeave.id,
+                    newDate: updatedLeave.startDate,
+                    oldDate: original?.startDate,
+                    leaveType: updatedLeave.leaveType,
+                    days: updatedLeave.days
+                }
+            });
+            await leaveService.addAuditLog(log);
+        } catch (e) {
+            console.warn('Audit log error:', e);
+        }
+
+        await refreshData(false);
+    };
+
     const deleteLeave = async (id: string) => {
+        const targetLeave = leaves.find(l => l.id === id);
+        
+        // Optimistic UI update
         setLeaves(prev => prev.filter(l => l.id !== id));
+
+        // 自動回補員工額度
+        if (targetLeave) {
+            const emp = employees.find(e => e.id === targetLeave.employeeId);
+            if (emp) {
+                const updatedEmp = { ...emp };
+                if (targetLeave.leaveType === 'annual') {
+                    updatedEmp.annualLeave = {
+                        ...updatedEmp.annualLeave,
+                        used: Math.max(0, updatedEmp.annualLeave.used - targetLeave.days)
+                    };
+                } else {
+                    updatedEmp.personalLeave = {
+                        ...updatedEmp.personalLeave,
+                        used: Math.max(0, updatedEmp.personalLeave.used - targetLeave.days)
+                    };
+                }
+                await updateEmployee(updatedEmp);
+            }
+
+            // Log audit
+            try {
+                const log = createAuditLog({
+                    category: 'leave',
+                    action: 'leave_delete',
+                    employeeId: targetLeave.employeeId,
+                    employeeName: targetLeave.employeeName,
+                    details: {
+                        date: targetLeave.startDate,
+                        leaveType: targetLeave.leaveType,
+                        refundedDays: targetLeave.days
+                    }
+                });
+                await leaveService.addAuditLog(log);
+            } catch (e) {
+                console.warn('Audit log error:', e);
+            }
+        }
+
         try {
             await leaveService.deleteLeave(id);
         } catch (err) {
@@ -201,6 +314,7 @@ export function LeaveProvider({ children }: { children: ReactNode }) {
             deleteEmployee,
             addLeave,
             addLeaves,
+            updateLeave,
             deleteLeave,
             addBranch,
             removeBranch,
