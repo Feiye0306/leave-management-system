@@ -67,65 +67,125 @@ export function LeaveProvider({ children }: { children: ReactNode }) {
         refreshData();
     }, []);
 
-    // Wrappers
+    // Optimistic UI Wrappers
     const addEmployee = async (emp: Employee) => {
-        await leaveService.saveEmployee(emp);
+        setEmployees(prev => [...prev.filter(e => e.id !== emp.id), emp]);
+        try {
+            await leaveService.saveEmployee(emp);
+        } catch (err) {
+            console.warn('addEmployee storage error:', err);
+        }
         await refreshData(false);
     };
 
     const updateEmployee = async (emp: Employee) => {
-        await leaveService.saveEmployee(emp);
+        setEmployees(prev => prev.map(e => e.id === emp.id ? emp : e));
+        try {
+            await leaveService.saveEmployee(emp);
+        } catch (err) {
+            console.warn('updateEmployee storage error:', err);
+        }
         await refreshData(false);
     };
 
     const deleteEmployee = async (id: string) => {
-        await leaveService.deleteEmployee(id);
+        setEmployees(prev => prev.filter(e => e.id !== id));
+        try {
+            await leaveService.deleteEmployee(id);
+        } catch (err) {
+            console.warn('deleteEmployee storage error:', err);
+        }
         await refreshData(false);
     };
 
     const addLeave = async (leave: LeaveRecord) => {
-        await leaveService.addLeave(leave);
-        await refreshData(false); // Silent refresh
+        setLeaves(prev => [...prev.filter(l => l.id !== leave.id), leave]);
+        try {
+            await leaveService.addLeave(leave);
+        } catch (err) {
+            console.warn('addLeave storage error:', err);
+        }
+        await refreshData(false);
     };
 
     const addLeaves = async (newLeaves: LeaveRecord[]) => {
-        for (const leave of newLeaves) {
-            await leaveService.addLeave(leave);
+        setLeaves(prev => [...prev, ...newLeaves]);
+        try {
+            for (const leave of newLeaves) {
+                await leaveService.addLeave(leave);
+            }
+        } catch (err) {
+            console.warn('addLeaves storage error:', err);
         }
-        await refreshData(false); // Silent refresh once
+        await refreshData(false);
     };
 
     const deleteLeave = async (id: string) => {
-        await leaveService.deleteLeave(id);
+        setLeaves(prev => prev.filter(l => l.id !== id));
+        try {
+            await leaveService.deleteLeave(id);
+        } catch (err) {
+            console.warn('deleteLeave storage error:', err);
+        }
         await refreshData(false);
     };
 
     const addBranch = async (branch: string) => {
-        await leaveService.addBranch(branch);
-        await refreshData();
+        setBranches(prev => prev.includes(branch) ? prev : [...prev, branch]);
+        try {
+            await leaveService.addBranch(branch);
+        } catch (err) {
+            console.warn('addBranch storage error:', err);
+        }
+        await refreshData(false);
     };
 
     const removeBranch = async (branch: string) => {
-        await leaveService.removeBranch(branch);
-        await refreshData();
+        setBranches(prev => prev.filter(b => b !== branch));
+        try {
+            await leaveService.removeBranch(branch);
+        } catch (err) {
+            console.warn('removeBranch storage error:', err);
+        }
+        await refreshData(false);
     };
 
     const generateSampleData = async () => {
-        await leaveService.generateSampleData();
-        await refreshData();
+        try {
+            await leaveService.generateSampleData();
+        } catch (err) {
+            console.warn('generateSampleData error:', err);
+        }
+        await refreshData(true);
     };
 
     const resetData = async () => {
-        await leaveService.resetData();
-        await refreshData();
+        setEmployees([]);
+        setLeaves([]);
+        setBranches([]);
+        try {
+            await leaveService.resetData();
+        } catch (err) {
+            console.warn('resetData error:', err);
+        }
+        await refreshData(true);
     };
 
     const addAuditLog = async (log: AuditLog) => {
-        await leaveService.addAuditLog(log);
+        try {
+            await leaveService.addAuditLog(log);
+        } catch (err) {
+            console.warn('addAuditLog error:', err);
+        }
     };
 
     const getAuditLogs = async (employeeId?: string) => {
-        return await leaveService.getAuditLogs({ employeeId });
+        try {
+            return await leaveService.getAuditLogs({ employeeId });
+        } catch (err) {
+            console.warn('getAuditLogs error:', err);
+            return [];
+        }
     };
 
     return (

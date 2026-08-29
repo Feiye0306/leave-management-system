@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Search, Edit, X, UserPlus, Trash2, Plus, Minus, TrendingUp } from 'lucide-react';
 import { useLeaveSystem } from '../context/LeaveContext';
-import { calculateAvailable } from '../utils/leaveUtils';
+import { calculateAvailable, calculateAnnualLeave } from '../utils/leaveUtils';
 import { createAuditLog } from '../utils/auditLogger';
 import type { Employee } from '../types';
 
@@ -135,58 +135,76 @@ function EmployeeList({ selectedBranch }: EmployeeListProps) {
     };
 
     const handleAddEmployeeSubmit = async () => {
-        if (!newEmp.name) {
-            alert('請填寫姓名');
+        if (!newEmp.name || !newEmp.name.trim()) {
+            alert('請填寫員工姓名');
             return;
         }
 
-        const currentIds = employees.map(e => {
-            const match = e.id.match(/\d+/);
-            return match ? parseInt(match[0]) : 0;
-        });
-        const nextIdNum = currentIds.length > 0 ? Math.max(...currentIds) + 1 : 1;
-        const newId = `emp${String(nextIdNum).padStart(3, '0')}`;
+        try {
+            const { expiry } = calculateAnnualLeave(newEmp.hireDate);
 
-        const newEmployeeData: Employee = {
-            id: newId,
-            name: newEmp.name,
-            branch: newEmp.branch,
-            status: '在職',
-            hireDate: newEmp.hireDate,
-            annualLeave: { initial: newEmp.annualInitial, earned: 0, used: 0, adjustment: 0 },
-            personalLeave: { initial: newEmp.personalInitial, earned: 0, used: 0, adjustment: 0 },
-            monthlyPersonalQuota: newEmp.monthlyQuota
-        };
+            const currentIds = employees.map(e => {
+                const match = e.id.match(/\d+/);
+                return match ? parseInt(match[0]) : 0;
+            });
+            const nextIdNum = currentIds.length > 0 ? Math.max(...currentIds) + 1 : 1;
+            const newId = `emp${String(nextIdNum).padStart(3, '0')}`;
 
-        await addEmployee(newEmployeeData);
-
-        // Log employee creation
-        const log = createAuditLog({
-            category: 'employee',
-            action: 'employee_create',
-            employeeId: newId,
-            employeeName: newEmp.name,
-            details: {
+            const newEmployeeData: Employee = {
+                id: newId,
+                name: newEmp.name.trim(),
                 branch: newEmp.branch,
+                status: '在職',
                 hireDate: newEmp.hireDate,
-                annualInitial: newEmp.annualInitial,
-                personalInitial: newEmp.personalInitial,
-                monthlyQuota: newEmp.monthlyQuota
-            }
-        });
-        await addAuditLog(log);
+                annualLeave: {
+                    initial: Number(newEmp.annualInitial) || 0,
+                    earned: 0,
+                    used: 0,
+                    adjustment: 0,
+                    expiry: expiry
+                },
+                personalLeave: {
+                    initial: Number(newEmp.personalInitial) || 0,
+                    earned: 0,
+                    used: 0,
+                    adjustment: 0
+                },
+                monthlyPersonalQuota: Number(newEmp.monthlyQuota) || 4
+            };
 
-        setIsAddModalOpen(false);
-        setNewEmp({
-            name: '',
-            id: '',
-            branch: '信義校',
-            hireDate: new Date().toISOString().split('T')[0],
-            annualInitial: 0,
-            personalInitial: 0,
-            monthlyQuota: 4
-        });
-        alert(`員工新增成功！系統配號: ${newId}`);
+            await addEmployee(newEmployeeData);
+
+            // Log employee creation
+            const log = createAuditLog({
+                category: 'employee',
+                action: 'employee_create',
+                employeeId: newId,
+                employeeName: newEmp.name.trim(),
+                details: {
+                    branch: newEmp.branch,
+                    hireDate: newEmp.hireDate,
+                    annualInitial: Number(newEmp.annualInitial) || 0,
+                    personalInitial: Number(newEmp.personalInitial) || 0,
+                    monthlyQuota: Number(newEmp.monthlyQuota) || 4
+                }
+            });
+            await addAuditLog(log);
+
+            setIsAddModalOpen(false);
+            setNewEmp({
+                name: '',
+                id: '',
+                branch: '信義校',
+                hireDate: new Date().toISOString().split('T')[0],
+                annualInitial: 0,
+                personalInitial: 0,
+                monthlyQuota: 4
+            });
+            alert(`員工新增成功！系統配號: ${newId}`);
+        } catch (error) {
+            console.error('新增員工錯誤:', error);
+            alert('新增員工時發生錯誤，請重試');
+        }
     };
 
     return (
@@ -389,8 +407,9 @@ function EmployeeList({ selectedBranch }: EmployeeListProps) {
                         </div>
 
                         <button
+                            type="button"
                             onClick={handleAddEmployeeSubmit}
-                            className="w-full mt-8 bg-midnight-blue text-white py-4 rounded-2xl font-black text-lg hover:bg-slate-800 transition-all shadow-lg"
+                            className="w-full mt-8 bg-midnight-blue text-white py-4 rounded-2xl font-black text-lg hover:bg-slate-800 active:scale-[0.98] transition-all shadow-lg cursor-pointer select-none flex items-center justify-center"
                         >
                             確認新增
                         </button>

@@ -8,6 +8,9 @@
 
 本專案是專為企業/補習班校區打造的現代化員工請假、排休與特休管理系統，符合台灣《勞動基準法》規範。
 
+* **🌐 線上公開正式網址**: [https://feiye0306.github.io/leave-management-system/](https://feiye0306.github.io/leave-management-system/)
+* **🐙 GitHub 原始碼倉庫**: [https://github.com/Feiye0306/leave-management-system](https://github.com/Feiye0306/leave-management-system)
+
 ### 💻 技術堆疊 (Tech Stack)
 * **前端框架 (Frontend)**: React 18+ + TypeScript + Vite + Tailwind CSS。
 * **狀態管理與 UI (UI Ecosystem)**: Lucide React + Headless UI / Tailwind UI 元件庫。
