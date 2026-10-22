@@ -23,6 +23,7 @@ import {
   getMonthDays,
   calculateTeacherAttendance,
   generateGroupNoteText,
+  getDefaultHolidays,
   INITIAL_SCHEDULE_DATA
 } from '../utils/teacherScheduleEngine';
 
@@ -47,12 +48,12 @@ export default function TeacherMonthlyLeave() {
 
   const monthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
 
-  // 當前月份的日曆狀態
+  // 當前月份的日曆狀態 (若尚未有資料，自動載入該月台灣法定國定假日)
   const currentState: MonthlyCalendarState = allData[monthKey] || {
     year: currentYear,
     month: currentMonth,
     mondaysCount: getMondaysInMonth(currentYear, currentMonth),
-    holidays: {},
+    holidays: getDefaultHolidays(currentYear, currentMonth),
     teachers: (allData['2026-09']?.teachers || []).map(t => ({
       ...t,
       previousBalance: 0
@@ -135,7 +136,7 @@ export default function TeacherMonthlyLeave() {
           year,
           month,
           mondaysCount: getMondaysInMonth(year, month),
-          holidays: {},
+          holidays: getDefaultHolidays(year, month),
           teachers: inheritedTeachers,
           attendance: {}
         }
@@ -236,6 +237,59 @@ export default function TeacherMonthlyLeave() {
     }
   };
 
+  // 手動新增國定假日
+  const handleAddHoliday = () => {
+    const dayStr = window.prompt(`請輸入 ${currentMonth} 月的國定假日日期（填數字即可，例如 26 代表 ${currentMonth}/26）：`);
+    if (!dayStr) return;
+    const day = parseInt(dayStr.trim(), 10);
+    if (isNaN(day) || day < 1 || day > 31) {
+      alert('請輸入有效的日期數字 (1~31)！');
+      return;
+    }
+    const name = window.prompt(`請輸入 ${currentMonth}/${day} 的節日名稱（例如：中秋節、教師節、國慶日、颱風假）：`);
+    if (!name || !name.trim()) return;
+
+    updateCurrentState(prev => ({
+      ...prev,
+      holidays: {
+        ...prev.holidays,
+        [day]: name.trim()
+      }
+    }));
+    showToast(`🚩 已新增國定假日: ${currentMonth}/${day} (${name.trim()})`);
+  };
+
+  // 刪除國定假日
+  const handleDeleteHoliday = (day: number) => {
+    updateCurrentState(prev => {
+      const nextH = { ...prev.holidays };
+      delete nextH[day];
+      return {
+        ...prev,
+        holidays: nextH
+      };
+    });
+    showToast(`🗑️ 已移除 ${currentMonth}/${day} 國定假日`);
+  };
+
+  // 一鍵自動帶入官方國定假日
+  const handleAutoFillHolidays = () => {
+    const defaults = getDefaultHolidays(currentYear, currentMonth);
+    const count = Object.keys(defaults).length;
+    if (count === 0) {
+      showToast(`ℹ️ ${currentYear} 年 ${currentMonth} 月無特殊官方國定假日`);
+      return;
+    }
+    updateCurrentState(prev => ({
+      ...prev,
+      holidays: {
+        ...prev.holidays,
+        ...defaults
+      }
+    }));
+    showToast(`🎉 已自動載入 ${count} 個法定國定假日！`);
+  };
+
   return (
     <div className="space-y-6 pb-24">
       {/* Toast 提示 */}
@@ -321,17 +375,45 @@ export default function TeacherMonthlyLeave() {
             </div>
 
             {/* 國定假日 */}
-            <div className="flex items-center gap-2 bg-slate-800/80 px-3.5 py-2 rounded-xl border border-slate-700">
+            <div className="flex items-center gap-2 bg-slate-800/80 px-3.5 py-2 rounded-xl border border-slate-700 flex-wrap">
               <span className="text-slate-300 font-medium">🚩 當月國定假日:</span>
               {Object.keys(currentState.holidays).length > 0 ? (
                 Object.entries(currentState.holidays).map(([d, name]) => (
-                  <span key={d} className="bg-rose-950/60 text-rose-300 border border-rose-800/60 px-2 py-0.5 rounded text-xs font-semibold">
-                    {currentMonth}/{d} ({name})
+                  <span
+                    key={d}
+                    className="inline-flex items-center gap-1.5 bg-rose-950/60 text-rose-300 border border-rose-800/60 px-2 py-0.5 rounded text-xs font-semibold"
+                  >
+                    <span>{currentMonth}/{d} ({name})</span>
+                    <button
+                      onClick={() => handleDeleteHoliday(parseInt(d, 10))}
+                      title="刪除此假日"
+                      className="text-rose-400 hover:text-white font-bold ml-0.5 px-0.5"
+                    >
+                      ×
+                    </button>
                   </span>
                 ))
               ) : (
                 <span className="text-slate-500 italic">無特殊國定紅字</span>
               )}
+
+              {/* 操作按鈕組 */}
+              <div className="flex items-center gap-2 ml-1">
+                <button
+                  onClick={handleAddHoliday}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-cyan-400 hover:text-cyan-300 bg-slate-700/60 hover:bg-slate-700 px-2 py-1 rounded-lg border border-slate-600 transition-colors"
+                >
+                  <Plus size={12} />
+                  <span>新增紅字</span>
+                </button>
+                <button
+                  onClick={handleAutoFillHolidays}
+                  title="自動帶入台灣法定國定假日"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-300 hover:text-white bg-slate-700/40 hover:bg-slate-700 px-2 py-1 rounded-lg border border-slate-600/60 transition-colors"
+                >
+                  <span>🔄 自動帶入法定假日</span>
+                </button>
+              </div>
             </div>
           </div>
 
