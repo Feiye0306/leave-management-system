@@ -14,6 +14,17 @@ describe('全職老師日曆排休與算式引擎 (Teacher Schedule Engine Tests
     expect(getMondaysInMonth(2026, 9)).toBe(4);
   });
 
+  it('getMonthDays 應準確生成當月所有日期與星期資訊', () => {
+    const days = getMonthDays(2026, 9, { 26: '中秋節', 28: '教師節' });
+    expect(days.length).toBe(30);
+    // 9/7 是第一個週一
+    const sep7 = days.find(d => d.day === 7)!;
+    expect(sep7.isMonday).toBe(true);
+    // 9/26 中秋節
+    const sep26 = days.find(d => d.day === 26)!;
+    expect(sep26.holidayName).toBe('中秋節');
+  });
+
   it('應依「週一數 × 週休天數」算出法定應休假期 (核心公式)', () => {
     const s9 = INITIAL_SCHEDULE_DATA['2026-09'];
     // 9 月有 4 個週一
