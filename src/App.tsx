@@ -7,7 +7,8 @@ import {
   Database,
   Settings,
   Building2,
-  ScrollText
+  ScrollText,
+  Sparkles
 } from 'lucide-react';
 import './index.css';
 import DashboardV2 from './components/DashboardV2';
@@ -17,6 +18,7 @@ import ReportCenterV2 from './components/ReportCenterV2';
 import DataManagement from './components/DataManagement';
 import SystemSettings from './components/SystemSettings';
 import AuditLogViewer from './components/AuditLogViewer';
+import TeacherMonthlyLeave from './components/TeacherMonthlyLeave';
 import { LeaveProvider, useLeaveSystem } from './context/LeaveContext';
 import { AnnualResetService } from './services/AnnualResetService';
 import { useEffect } from 'react';
@@ -51,22 +53,20 @@ function AutoBackupController() {
   return null;
 }
 
-type TabType = 'dashboard' | 'leave-input' | 'employees' | 'reports' | 'audit-log' | 'data' | 'settings';
+type TabType = 'dashboard' | 'teacher-monthly' | 'leave-input' | 'employees' | 'reports' | 'audit-log' | 'data' | 'settings';
 
 function AppContent() {
   const { branches } = useLeaveSystem();
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  // 支援由 URL hash 初始化，如 #teacher-monthly
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (window.location.hash === '#teacher-monthly') return 'teacher-monthly';
+    return 'dashboard';
+  });
   const [selectedBranch, setSelectedBranch] = useState<string>('全部分校');
-
-  // Ensure selected branch is valid (reset to All if not found, optional but good UX)
-  // useEffect(() => {
-  //   if (selectedBranch !== '全部分校' && !branches.includes(selectedBranch)) {
-  //     setSelectedBranch('全部分校');
-  //   }
-  // }, [branches, selectedBranch]);
 
   const menuItems = [
     { id: 'dashboard' as TabType, label: '分校儀表板', icon: LayoutDashboard },
+    { id: 'teacher-monthly' as TabType, label: '全職老師月假算式', icon: Sparkles, badge: 'NEW' },
     { id: 'leave-input' as TabType, label: '排休申請', icon: CalendarPlus },
     { id: 'employees' as TabType, label: '員工管理', icon: Users },
     { id: 'reports' as TabType, label: '報表中心', icon: FileText },
@@ -90,14 +90,28 @@ function AppContent() {
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all font-bold ${activeTab === item.id
+                onClick={() => {
+                  setActiveTab(item.id);
+                  if (item.id === 'teacher-monthly') {
+                    window.location.hash = '#teacher-monthly';
+                  } else {
+                    window.history.replaceState(null, '', window.location.pathname);
+                  }
+                }}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl transition-all font-bold ${activeTab === item.id
                   ? 'bg-white text-midnight-blue shadow-lg'
                   : 'text-indigo-100 hover:bg-indigo-900/30'
                   }`}
               >
-                <Icon size={20} />
-                <span>{item.label}</span>
+                <div className="flex items-center gap-3">
+                  <Icon size={20} />
+                  <span>{item.label}</span>
+                </div>
+                {item.badge && (
+                  <span className="text-[10px] font-black tracking-wider bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 px-2 py-0.5 rounded-full shadow-sm">
+                    {item.badge}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -131,6 +145,9 @@ function AppContent() {
         <main className="flex-1 overflow-auto p-8">
           {activeTab === 'dashboard' && (
             <DashboardV2 selectedBranch={selectedBranch} onNavigate={(tab) => setActiveTab(tab as TabType)} />
+          )}
+          {activeTab === 'teacher-monthly' && (
+            <TeacherMonthlyLeave />
           )}
           {activeTab === 'leave-input' && (
             <LeaveInputV2 selectedBranch={selectedBranch} />
