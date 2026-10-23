@@ -7,13 +7,11 @@ import {
 } from 'firebase/auth';
 
 const STORAGE_AUTH_USER_KEY = 'winner_auth_user_v1';
-const STORAGE_WHITELIST_KEY = 'winner_auth_whitelist_v1';
+const STORAGE_WHITELIST_KEY = 'winner_auth_whitelist_v2';
 
-// 預設管理員白名單 (全轉小寫比對)
+// 預設管理員白名單 (全轉小寫比對) - 僅限個人管理員
 export const DEFAULT_WHITELIST: string[] = [
-  'feiye0306@gmail.com',
-  'winners.educenter@gmail.com',
-  'winners@winners.tw'
+  'feiye0306@gmail.com'
 ];
 
 export interface AuthUserInfo {
