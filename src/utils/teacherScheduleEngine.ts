@@ -90,7 +90,9 @@ export function getMonthDays(year: number, month: number, holidays: Record<numbe
  * 根據日曆排休標記，精算老師當月所有休假指標
  */
 export interface TeacherCalculationResult {
-  baseQuota: number;          // 當月應休天數 = 週一數 × 週休天數
+  baseMondayQuota: number;    // 週一基準應休 = 週一數 × 週休天數
+  holidayBonus: number;       // 國定假日加發天數 (國定假日讓所有人多一天假期)
+  baseQuota: number;          // 當月總應休天數 = baseMondayQuota + holidayBonus
   leaveDays: number[];        // 排休日期陣列 (如 [5, 12, 19, 26])
   sickDays: number[];         // 病假日期陣列 (如 [3])
   makeUpDays: number[];       // 上課補假日期陣列 (如 [5, 12, 19])
@@ -101,17 +103,20 @@ export interface TeacherCalculationResult {
   makeUpCount: number;        // 補假天數 (+項)
   geptDeduction: number;      // 英檢班扣除天數 (-項，每次0.25)
   
-  monthlyBalance: number;     // 本月餘假 = 應休 + 補假 - 排休 - 病假 - 英檢班扣假
+  monthlyBalance: number;     // 本月餘假 = 總應休 + 補假 - 排休 - 病假 - 英檢班扣假
   accumulatedBalance: number; // 本月排休未休小計 = 上月未休累計 + 本月餘假
 }
 
 export function calculateTeacherAttendance(
   teacher: TeacherRosterProfile,
   attendance: TeacherMonthAttendance | undefined,
-  mondaysCount: number
+  mondaysCount: number,
+  holidayBonus: number = 0
 ): TeacherCalculationResult {
-  // 核心公式：應休天數 = 週一數 × 週休天數
-  const baseQuota = mondaysCount * teacher.weeklyDaysOff;
+  // 核心公式：週一基準應休 = 週一數 × 週休天數
+  const baseMondayQuota = mondaysCount * teacher.weeklyDaysOff;
+  // 國定假日讓所有人多休假 (當天不一定排休，額度計入總應休)
+  const baseQuota = baseMondayQuota + holidayBonus;
 
   const dayMarks = attendance?.dayMarks || {};
   const leaveDays: number[] = [];
@@ -137,13 +142,15 @@ export function calculateTeacherAttendance(
   const makeUpCount = makeUpDays.length;
   const geptDeduction = Number((geptDays.length * DAY_STATUS_CONFIGS.gept.weight).toFixed(2));
 
-  // 本月餘假 = 應休 + 補假 - 實排 - 病假 - 英檢扣除
+  // 本月餘假 = 總應休(週一基數+國定假日) + 補假 - 實排 - 病假 - 英檢扣除
   const monthlyBalance = Number((baseQuota + makeUpCount - leaveCount - sickCount - geptDeduction).toFixed(2));
 
   // 跨月累積未休小計 = 上月未休累計 + 本月餘假
   const accumulatedBalance = Number((teacher.previousBalance + monthlyBalance).toFixed(2));
 
   return {
+    baseMondayQuota,
+    holidayBonus,
     baseQuota,
     leaveDays,
     sickDays,

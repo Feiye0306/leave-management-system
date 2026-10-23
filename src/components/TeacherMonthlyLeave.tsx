@@ -75,6 +75,15 @@ export default function TeacherMonthlyLeave() {
   const [copySuccess, setCopySuccess] = useState<boolean>(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  // 國定假日極速增刪彈窗
+  const [showHolidayModal, setShowHolidayModal] = useState<boolean>(false);
+  const [newHolidayDay, setNewHolidayDay] = useState<number>(10);
+  const [newHolidayName, setNewHolidayName] = useState<string>('國慶日');
+
+  // 國定假日全員加發假期額度開關 (所有人多一天假期，當天自由排休或存入未休)
+  const [includeHolidayBonus, setIncludeHolidayBonus] = useState<boolean>(false);
+  const holidayBonus = includeHolidayBonus ? Object.keys(currentState.holidays).length : 0;
+
   // 自動持久化
   useEffect(() => {
     try {
@@ -175,7 +184,7 @@ export default function TeacherMonthlyLeave() {
   const activeTeacher = currentState.teachers.find(t => t.id === selectedTeacherId) || currentState.teachers[0];
   const activeAttendance = activeTeacher ? currentState.attendance[activeTeacher.id] : undefined;
   const activeCalc = activeTeacher
-    ? calculateTeacherAttendance(activeTeacher, activeAttendance, currentState.mondaysCount)
+    ? calculateTeacherAttendance(activeTeacher, activeAttendance, currentState.mondaysCount, holidayBonus)
     : null;
 
   // 日期清單
@@ -237,26 +246,29 @@ export default function TeacherMonthlyLeave() {
     }
   };
 
-  // 手動新增國定假日
-  const handleAddHoliday = () => {
-    const dayStr = window.prompt(`請輸入 ${currentMonth} 月的國定假日日期（填數字即可，例如 26 代表 ${currentMonth}/26）：`);
-    if (!dayStr) return;
-    const day = parseInt(dayStr.trim(), 10);
-    if (isNaN(day) || day < 1 || day > 31) {
-      alert('請輸入有效的日期數字 (1~31)！');
+  // 開啟國定假日新增彈窗
+  const handleOpenHolidayModal = () => {
+    // 預設日期為 1 號或今天
+    setNewHolidayDay(Math.min(new Date().getDate(), getMonthDays(currentYear, currentMonth).length));
+    setNewHolidayName('國定節日');
+    setShowHolidayModal(true);
+  };
+
+  // 確認新增國定假日
+  const confirmAddHoliday = () => {
+    if (!newHolidayName.trim()) {
+      alert('請填寫節日名稱！');
       return;
     }
-    const name = window.prompt(`請輸入 ${currentMonth}/${day} 的節日名稱（例如：中秋節、教師節、國慶日、颱風假）：`);
-    if (!name || !name.trim()) return;
-
     updateCurrentState(prev => ({
       ...prev,
       holidays: {
         ...prev.holidays,
-        [day]: name.trim()
+        [newHolidayDay]: newHolidayName.trim()
       }
     }));
-    showToast(`🚩 已新增國定假日: ${currentMonth}/${day} (${name.trim()})`);
+    setShowHolidayModal(false);
+    showToast(`🚩 已新增國定假日: ${currentMonth}/${newHolidayDay} (${newHolidayName.trim()})`);
   };
 
   // 刪除國定假日
@@ -400,11 +412,11 @@ export default function TeacherMonthlyLeave() {
               {/* 操作按鈕組 */}
               <div className="flex items-center gap-2 ml-1">
                 <button
-                  onClick={handleAddHoliday}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold text-cyan-400 hover:text-cyan-300 bg-slate-700/60 hover:bg-slate-700 px-2 py-1 rounded-lg border border-slate-600 transition-colors"
+                  onClick={handleOpenHolidayModal}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-cyan-400 hover:text-cyan-300 bg-slate-700/60 hover:bg-slate-700 px-2.5 py-1 rounded-lg border border-slate-600 transition-colors shadow-sm active:scale-95"
                 >
                   <Plus size={12} />
-                  <span>新增紅字</span>
+                  <span>➕ 新增紅字</span>
                 </button>
                 <button
                   onClick={handleAutoFillHolidays}
@@ -413,6 +425,19 @@ export default function TeacherMonthlyLeave() {
                 >
                   <span>🔄 自動帶入法定假日</span>
                 </button>
+
+                {/* 國定假日全員加假開關 */}
+                {Object.keys(currentState.holidays).length > 0 && (
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer text-[11px] text-cyan-300 font-bold bg-cyan-950/40 hover:bg-cyan-950/60 px-2.5 py-1 rounded-lg border border-cyan-700/60 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={includeHolidayBonus}
+                      onChange={(e) => setIncludeHolidayBonus(e.target.checked)}
+                      className="rounded accent-cyan-400"
+                    />
+                    <span>全員應休加發 +{Object.keys(currentState.holidays).length}天假 (當天自由排休)</span>
+                  </label>
+                )}
               </div>
             </div>
           </div>
@@ -496,7 +521,7 @@ export default function TeacherMonthlyLeave() {
               <div className="space-y-2">
                 {currentState.teachers.map((t) => {
                   const att = currentState.attendance[t.id];
-                  const calc = calculateTeacherAttendance(t, att, currentState.mondaysCount);
+                  const calc = calculateTeacherAttendance(t, att, currentState.mondaysCount, holidayBonus);
                   const isSelected = t.id === selectedTeacherId;
 
                   return (
@@ -800,7 +825,7 @@ export default function TeacherMonthlyLeave() {
             <tbody>
               {currentState.teachers.map((t) => {
                 const att = currentState.attendance[t.id];
-                const calc = calculateTeacherAttendance(t, att, currentState.mondaysCount);
+                const calc = calculateTeacherAttendance(t, att, currentState.mondaysCount, holidayBonus);
 
                 return (
                   <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50/80">
@@ -880,7 +905,7 @@ export default function TeacherMonthlyLeave() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {currentState.teachers.map((t) => {
               const att = currentState.attendance[t.id];
-              const calc = calculateTeacherAttendance(t, att, currentState.mondaysCount);
+              const calc = calculateTeacherAttendance(t, att, currentState.mondaysCount, holidayBonus);
 
               return (
                 <div key={t.id} className="p-5 rounded-2xl border-2 border-slate-200 bg-slate-50/50 space-y-3">
@@ -971,6 +996,103 @@ export default function TeacherMonthlyLeave() {
             <pre className="whitespace-pre-wrap font-sans selection:bg-cyan-500 selection:text-black">
               {generateGroupNoteText(currentState)}
             </pre>
+          </div>
+        </div>
+      )}
+
+      {/* 國定假日快捷新增彈窗 (Holiday Modal) */}
+      {showHolidayModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-5 border border-slate-200 animate-scale-up">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-rose-50 text-rose-600 rounded-xl font-bold text-lg">🚩</span>
+                <div>
+                  <h3 className="text-lg font-black text-slate-800">新增 {currentMonth} 月國定假日 / 紅字</h3>
+                  <p className="text-xs text-slate-400">設定後會自動標記在日曆上並組合於記事本</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowHolidayModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-black text-lg p-1"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4 text-left">
+              {/* 日期選擇 */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1.5">
+                  選擇日期 (幾號):
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-700 text-sm">{currentMonth} 月</span>
+                  <select
+                    value={newHolidayDay}
+                    onChange={(e) => setNewHolidayDay(parseInt(e.target.value, 10))}
+                    className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold font-mono text-slate-800 focus:outline-none focus:border-blue-500"
+                  >
+                    {monthDays.map(d => (
+                      <option key={d.day} value={d.day}>
+                        {d.day} 號 (週{['日', '一', '二', '三', '四', '五', '六'][d.dayOfWeek]})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* 節日名稱 */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1.5">
+                  節日名稱:
+                </label>
+                <input
+                  type="text"
+                  value={newHolidayName}
+                  onChange={(e) => setNewHolidayName(e.target.value)}
+                  placeholder="例如: 中秋節、教師節、國慶日、颱風假"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* 快捷常見節日標籤 */}
+              <div>
+                <div className="text-[11px] font-bold text-slate-500 mb-2">常用節日快捷點選:</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {['中秋節', '教師節', '國慶日', '元旦', '春節', '清明節', '端午節', '勞動節', '颱風假', '校慶補假'].map(tag => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setNewHolidayName(tag)}
+                      className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                        newHolidayName === tag
+                          ? 'bg-rose-600 text-white border-rose-600 font-bold shadow-sm'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 底部按鈕 */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setShowHolidayModal(false)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-xs"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmAddHoliday}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md active:scale-95"
+              >
+                確定新增紅字
+              </button>
+            </div>
           </div>
         </div>
       )}

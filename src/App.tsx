@@ -8,7 +8,8 @@ import {
   Settings,
   Building2,
   ScrollText,
-  Sparkles
+  Sparkles,
+  LogOut
 } from 'lucide-react';
 import './index.css';
 import DashboardV2 from './components/DashboardV2';
@@ -19,6 +20,8 @@ import DataManagement from './components/DataManagement';
 import SystemSettings from './components/SystemSettings';
 import AuditLogViewer from './components/AuditLogViewer';
 import TeacherMonthlyLeave from './components/TeacherMonthlyLeave';
+import AuthGuard from './components/AuthGuard';
+import { getStoredUser, logout } from './services/AuthService';
 import { LeaveProvider, useLeaveSystem } from './context/LeaveContext';
 import { AnnualResetService } from './services/AnnualResetService';
 import { useEffect } from 'react';
@@ -138,6 +141,42 @@ function AppContent() {
                 ))}
               </select>
             </div>
+
+            {/* 右側使用者身分與 Google 白名單狀態 */}
+            {(() => {
+              const user = getStoredUser();
+              if (!user) return null;
+              return (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 px-3.5 py-1.5 rounded-2xl shadow-sm">
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt="Avatar" className="w-7 h-7 rounded-full border border-blue-500 shrink-0" />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs shrink-0">
+                        {user.name[0] || '管'}
+                      </div>
+                    )}
+                    <div className="text-left text-xs leading-tight">
+                      <p className="font-bold text-slate-800 truncate max-w-[140px]">{user.name}</p>
+                      <p className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                        <span>🛡️ Google 白名單</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      await logout();
+                      window.location.reload();
+                    }}
+                    title="登出系統"
+                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+                  >
+                    <LogOut size={18} />
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </header>
 
@@ -175,12 +214,14 @@ function AppContent() {
 
 function App() {
   return (
-    <LeaveProvider>
-      <AnnualResetController />
-      <MonthlyAccrualController />
-      <AutoBackupController />
-      <AppContent />
-    </LeaveProvider>
+    <AuthGuard>
+      <LeaveProvider>
+        <AnnualResetController />
+        <MonthlyAccrualController />
+        <AutoBackupController />
+        <AppContent />
+      </LeaveProvider>
+    </AuthGuard>
   );
 }
 
