@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { ShieldCheck, AlertCircle, Key, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ShieldCheck, AlertCircle, Lock, ArrowRight } from 'lucide-react';
 import type { AuthUserInfo } from '../services/AuthService';
 import {
   getStoredUser,
-  loginWithGoogle,
-  devBypassLogin,
-  getWhitelist
+  loginWithGoogleOAuth,
+  verifyAndLoginWithGoogleJwt,
+  loginWithPasscode,
+  GOOGLE_CLIENT_ID
 } from '../services/AuthService';
 
 interface AuthGuardProps {
@@ -16,41 +17,94 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const [currentUser, setCurrentUser] = useState<AuthUserInfo | null>(() => getStoredUser());
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [showDevInput, setShowDevInput] = useState<boolean>(false);
-  const [customEmail, setCustomEmail] = useState<string>('feiye0306@gmail.com');
 
-  const whitelist = getWhitelist();
+  // 安全通行密碼輸入狀態
+  const [showPasscodeInput, setShowPasscodeInput] = useState<boolean>(false);
+  const [passcode, setPasscode] = useState<string>('');
 
-  // 嘗試透過 Google 登入
-  const handleGoogleSignIn = async () => {
+  const gsiBtnContainerRef = useRef<HTMLDivElement>(null);
+
+  // 初始化 Google Identity Services (GSI) 原生按鈕 (比照工讀金系統)
+  useEffect(() => {
+    if (currentUser) return;
+
+    let retryCount = 0;
+    const interval = setInterval(() => {
+      const google = (window as any).google;
+      if (google?.accounts?.id && gsiBtnContainerRef.current) {
+        clearInterval(interval);
+        try {
+          google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: (response: any) => {
+              if (response?.credential) {
+                const res = verifyAndLoginWithGoogleJwt(response.credential);
+                if (res.success && res.user) {
+                  setCurrentUser(res.user);
+                } else {
+                  setErrorMsg(res.error || 'Google 身分驗證未通過');
+                }
+              }
+            },
+            auto_select: false
+          });
+
+          gsiBtnContainerRef.current.innerHTML = '';
+          google.accounts.id.renderButton(gsiBtnContainerRef.current, {
+            theme: 'outline',
+            size: 'large',
+            text: 'signin_with',
+            shape: 'pill',
+            width: 320
+          });
+        } catch (err: any) {
+          console.warn('GSI 初始化按鈕未就緒:', err);
+        }
+      }
+
+      retryCount++;
+      if (retryCount > 15) {
+        clearInterval(interval);
+      }
+    }, 300);
+
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  // 點擊自訂 Google 登入按鈕
+  const handleGoogleOAuthLogin = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const res = await loginWithGoogle();
+      const res = await loginWithGoogleOAuth();
       if (res.success && res.user) {
         setCurrentUser(res.user);
       } else {
-        setErrorMsg(res.error || 'Google 登入失敗');
+        setErrorMsg(res.error || 'Google 授權未完成');
+        // 若 Google 跨網域受限，提示切換密碼驗證
+        setShowPasscodeInput(true);
       }
     } catch (e: any) {
-      setErrorMsg(e.message || '連線錯誤');
+      setErrorMsg(e.message || '連線授權失敗');
+      setShowPasscodeInput(true);
     } finally {
       setLoading(false);
     }
   };
 
-  // 直通模式
-  const handleDevBypass = (email: string) => {
+  // 管理員專屬安全通行密碼登入 (杜絕無痕開任意進)
+  const handlePasscodeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMsg(null);
-    const res = devBypassLogin(email);
+    const res = loginWithPasscode(passcode);
     if (res.success && res.user) {
       setCurrentUser(res.user);
     } else {
-      setErrorMsg(res.error || '直通登入失敗');
+      setErrorMsg(res.error || '密碼錯誤');
     }
   };
 
-  // 若已通過驗證，直接放行子頁面
+  // 若已通過白名單身分驗證，直接放行顯示系統頁面
   if (currentUser && currentUser.isWhitelisted) {
     return <>{children}</>;
   }
@@ -66,7 +120,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
         <div className="space-y-1.5">
           <h2 className="text-2xl font-black text-slate-800 tracking-tight">管理員身分安全驗證</h2>
           <p className="text-xs text-slate-500 leading-relaxed px-2">
-            本系統為校內專屬排班資料庫，僅允許授權的 Google 管理員帳號登入存取。非授權帳號將無法讀取資料。
+            本系統為校內專屬排班資料庫，僅允許授權之 Google 管理員或具備安全通行金鑰存取。
           </p>
         </div>
 
@@ -78,14 +132,17 @@ export default function AuthGuard({ children }: AuthGuardProps) {
           </div>
         )}
 
-        {/* Google 登入大按鈕 */}
+        {/* Google 登入區域 */}
         <div className="pt-2 flex flex-col items-center justify-center space-y-3">
+          {/* GSI 原生按鈕掛載點 (比照工讀金系統) */}
+          <div ref={gsiBtnContainerRef} className="min-h-[44px] flex items-center justify-center w-full"></div>
+
+          {/* 備用彈窗按鈕 (相容各種瀏覽器) */}
           <button
-            onClick={handleGoogleSignIn}
+            onClick={handleGoogleOAuthLogin}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-50 border-2 border-slate-300 hover:border-slate-400 text-slate-700 font-bold px-6 py-3.5 rounded-2xl shadow-md transition-all active:scale-95 disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-50 border-2 border-slate-300 hover:border-slate-400 text-slate-700 font-bold px-6 py-3 rounded-2xl shadow-sm transition-all active:scale-95 disabled:opacity-50"
           >
-            {/* Google G Logo SVG */}
             <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
               <path
                 fill="#4285F4"
@@ -105,68 +162,67 @@ export default function AuthGuard({ children }: AuthGuardProps) {
               />
             </svg>
             <span className="text-sm">
-              {loading ? '正在連線 Google 授權...' : '使用 Google 帳號授權登入'}
+              {loading ? '正在啟動 Google 授權...' : '使用 Google 帳號授權登入'}
             </span>
           </button>
 
           <p className="text-[11px] text-slate-400">
-            支援所有主流瀏覽器彈窗授權
+            採用 Google OAuth 2.0 官方安全授權加密通道
           </p>
         </div>
 
-        {/* 授權白名單說明 */}
-        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-left">
-          <div className="text-[11px] font-bold text-slate-600 mb-1 flex items-center gap-1">
-            <CheckCircle2 size={13} className="text-emerald-500" />
-            <span>已認可之管理員信箱範圍:</span>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {whitelist.map((email: string) => (
-              <span key={email} className="text-[10px] bg-slate-200/80 text-slate-700 px-2 py-0.5 rounded-md font-mono">
-                {email}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* 本地直通 / 快速登入模式 (如同工讀金系統) */}
-        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <button
-            onClick={() => handleDevBypass('feiye0306@gmail.com')}
-            className="text-blue-600 hover:text-blue-700 font-bold hover:underline flex items-center gap-1"
-          >
-            <Key size={13} />
-            <span>管理員直通登入</span>
-          </button>
-
-          <button
-            onClick={() => setShowDevInput(!showDevInput)}
-            className="text-slate-400 hover:text-slate-600 text-[11px]"
-          >
-            {showDevInput ? '收合自訂' : '切換信箱直通'}
-          </button>
-        </div>
-
-        {showDevInput && (
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-left animate-fade-in">
-            <label className="text-[11px] font-bold text-slate-600 block">輸入白名單信箱直通:</label>
-            <div className="flex gap-2">
-              <input
-                type="email"
-                value={customEmail}
-                onChange={(e) => setCustomEmail(e.target.value)}
-                className="flex-1 text-xs border border-slate-300 rounded-lg px-2 py-1 font-mono"
-                placeholder="xxx@gmail.com"
-              />
+        {/* 管理員安全通行密碼 (非無痕直通！必須輸入正確密碼始得進入) */}
+        <div className="pt-3 border-t border-slate-100 text-left">
+          {!showPasscodeInput ? (
+            <div className="text-center">
               <button
-                onClick={() => handleDevBypass(customEmail)}
-                className="bg-blue-600 text-white font-bold text-xs px-3 py-1 rounded-lg hover:bg-blue-700"
+                type="button"
+                onClick={() => setShowPasscodeInput(true)}
+                className="text-xs text-slate-500 hover:text-blue-600 font-semibold flex items-center justify-center gap-1.5 mx-auto hover:underline"
               >
-                登入
+                <Lock size={13} />
+                <span>切換為管理員通行密碼登入</span>
               </button>
             </div>
-          </div>
-        )}
+          ) : (
+            <form onSubmit={handlePasscodeSubmit} className="space-y-3 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <Lock size={13} className="text-slate-500" />
+                  <span>管理員安全通行密碼:</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowPasscodeInput(false)}
+                  className="text-[10px] text-slate-400 hover:text-slate-600"
+                >
+                  隱藏
+                </button>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={passcode}
+                  onChange={(e) => setPasscode(e.target.value)}
+                  placeholder="請輸入管理通行密碼"
+                  className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono tracking-widest"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1 transition-all shadow-md active:scale-95"
+                >
+                  <span>驗證</span>
+                  <ArrowRight size={13} />
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                本系統嚴格執行身分檢驗，杜絕未授權任意存取
+              </p>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
